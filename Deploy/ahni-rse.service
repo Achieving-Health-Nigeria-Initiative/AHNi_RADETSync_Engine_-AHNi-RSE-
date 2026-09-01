@@ -1,0 +1,19 @@
+[Unit]
+Description=AHNi RADET Sync Engine
+After=network.target
+
+[Service]
+Type=notify
+User=ace1admin
+WorkingDirectory=/opt/ahni-rse
+ExecStart=/opt/ahni-rse/AHNiRSE
+Restart=always
+RestartSec=10
+Environment=DOTNET_ENVIRONMENT=Production
+EnvironmentFile=-/opt/ahni-rse/env.conf
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ahni-rse
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+.claude/
+.review/
+publish/
+appsettings.Development.json
+appsettings.Production.json
+appsettings.*.local.json
+*.user
