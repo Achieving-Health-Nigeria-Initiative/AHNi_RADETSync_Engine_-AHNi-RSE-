@@ -1,11 +1,22 @@
+# Build output
 bin/
 obj/
-.vs/
-.claude/
-.review/
-publish/
-appsettings.Development.json
-appsettings.Production.json
-appsettings.*.local.json
 *.user
-Medilink_System_Documentation_v2.1_Release_Candidate.docx
+
+# Secrets / local overrides (never commit)
+appsettings.Development.json
+appsettings.Local.json
+appsettings.*.local.json
+secrets.json
+
+# Local report output
+C:/Reports/
+Reports/Output/
+*.xlsx
+*.stub.csv
+
+# IDE
+.vs/
+.idea/
+*.suo
+*.DotSettings.user

@@ -1,0 +1,9 @@
+{
+  "configProperties": {
+    "System.GC.Server": false,
+    "System.GC.Concurrent": true,
+    "System.GC.HeapHardLimit": "**1073741824**", // 1GB (was 200MB)
+    "System.GC.LOHThreshold": 85000,
+    "System.GC.ConserveMemory": 5
+  }
+}
