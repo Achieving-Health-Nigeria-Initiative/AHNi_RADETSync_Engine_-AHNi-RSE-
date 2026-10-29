@@ -55,12 +55,27 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 
 SQL scripts:
 
-- Every script is downloaded from the `Storage:Azure:ScriptContainerName` blob container at the start of
-  each cycle. Nothing is bundled with the service, so updating a blob updates every facility on its next run.
+- A script entry with a `LocalPath` is read from `Reports:LocalScriptFolder` (relative paths resolve against
+  the app's content root). RADET and HTS currently do this: they are the LAMISPlus report module 2.7.3
+  queries (`ReportRepository.getRadetData` / `getHtsReport`) kept in `RADETSyncEngine\report-script\`.
+- Every other script is downloaded from the `Storage:Azure:ScriptContainerName` blob container at the start
+  of each cycle, so updating a blob updates every facility on its next run.
 - `BlobPath` may include a folder; if that path is missing, the file name at the container root is tried.
-- If the RADET script cannot be downloaded the cycle fails and nothing is uploaded. If a sheet 2-7 script
-  cannot be downloaded or run, that sheet is empty and the workbook is still uploaded.
+- If the RADET script cannot be loaded the cycle fails and nothing is uploaded. If a sheet 2-7 script
+  cannot be loaded or run, that sheet keeps its headers with no rows and the workbook is still uploaded.
 - `Enabled: false` on a sheet entry leaves that sheet empty without running its query.
+
+Query parameters (named placeholders, bound as `$1..$5`; the report module's `?1..?5` also work):
+
+| Placeholder | Value |
+|---|---|
+| `:facility_id` | `FacilityId`, or 0 = `SELECT current_organisation_unit_id FROM base_application_user WHERE id = 1` |
+| `:start_date` | `StartDate`, or the script default: RADET 1980-01-01, HTS 1 July before the current fiscal year |
+| `:end_date` | `EndDate`, or today (WAT) |
+| `:previous_quarter_end` | end of the calendar quarter before `:end_date`'s quarter |
+| `:previous_previous_quarter_end` | end of the quarter before that |
+
+As in the report module, any RADET status containing "stop" is reported as "Stopped Treatment".
 
 Destination pattern:
 

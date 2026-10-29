@@ -73,17 +73,46 @@ public class PostgresService(
                     NpgsqlDbType = NpgsqlDbType.Date,
                     Value = parameters.EndDate
                 });
+                cmd.Parameters.Add(new NpgsqlParameter
+                {
+                    NpgsqlDbType = NpgsqlDbType.Date,
+                    Value = parameters.PreviousQuarterEnd
+                });
+                cmd.Parameters.Add(new NpgsqlParameter
+                {
+                    NpgsqlDbType = NpgsqlDbType.Date,
+                    Value = parameters.PreviousPreviousQuarterEnd
+                });
 
                 logger.LogDebug(
                     "[Database] Parameters bound: FacilityId={FacilityId}, " +
-                    "StartDate={StartDate}, EndDate={EndDate}",
+                    "StartDate={StartDate}, EndDate={EndDate}, PreviousQuarterEnd={Previous}, " +
+                    "PreviousPreviousQuarterEnd={PreviousPrevious}",
                     parameters.FacilityId,
                     parameters.StartDate,
-                    parameters.EndDate);
+                    parameters.EndDate,
+                    parameters.PreviousQuarterEnd,
+                    parameters.PreviousPreviousQuarterEnd);
 
                 return await FillTableAsync(cmd, token);
             },
             ct);
+    }
+
+    // ── FACILITY ID ───────────────────────────────────────────────────────────
+    public async Task<long> GetFacilityIdAsync(CancellationToken ct = default)
+    {
+        const string query =
+            "SELECT current_organisation_unit_id FROM base_application_user WHERE id = 1";
+
+        var table = await ExecuteScriptAsync(query, ct);
+        if (table.Rows.Count == 0 || table.Rows[0][0] is DBNull)
+            throw new DatabaseException(
+                "Facility id not found: base_application_user id 1 has no current_organisation_unit_id.");
+
+        var facilityId = Convert.ToInt64(table.Rows[0][0]);
+        logger.LogInformation("[Database] Facility id resolved: {FacilityId}", facilityId);
+        return facilityId;
     }
 
     // ── FACILITY IDENTITY ─────────────────────────────────────────────────────
@@ -289,8 +318,18 @@ public class PostgresService(
         return TimeSpan.FromMilliseconds(Math.Min(jittered, 30_000));
     }
 
+    // :facility_id, :start_date, ... -> $1..$5 (not "::" casts), and the report module's ?1..?5 -> $1..$5.
+    private static readonly Regex NamedPlaceholder = new(
+        @"(?<![:\w]):(" + string.Join("|", QueryParameters.PlaceholderNames) + @")\b",
+        RegexOptions.Compiled);
+
     private static string ConvertParameters(string sql)
-        => Regex.Replace(sql, @"\?(\d+)", "$$$1");
+    {
+        var named = NamedPlaceholder.Replace(
+            sql,
+            m => "$" + (Array.IndexOf(QueryParameters.PlaceholderNames, m.Groups[1].Value) + 1));
+        return Regex.Replace(named, @"\?(\d+)", "$$$1");
+    }
 
     private static void ValidateSql(string sql)
     {

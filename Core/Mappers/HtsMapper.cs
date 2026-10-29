@@ -3,6 +3,10 @@ using AHNiRSE.Core.Models;
 
 namespace AHNiRSE.Application.Mappers;
 
+/// <summary>
+/// Maps HTS query rows to <see cref="Hts"/>. The first column name is the LAMISPlus report module's
+/// (report-script/hts.sql); the second is the alias the older blob hts.sql used for the same value.
+/// </summary>
 public static class HtsMapper
 {
     public static List<Hts> Map(DataTable table)
@@ -14,8 +18,8 @@ public static class HtsMapper
             result.Add(new Hts
             {
                 // ── Identity / Location ───────────────────────────────────────
-                DatimCode = Get<string>(row, "datimcode"),
-                PatientId = Get<string>(row, "patientid"),
+                DatimCode = Get<string>(row, "datimid", "datimcode"),
+                PatientId = Get<string>(row, "personuuid", "patientid"),
                 ClientCode = Get<string>(row, "clientcode"),
                 Sex = Get<string>(row, "sex"),
                 Age = Get<int?>(row, "age"),
@@ -24,32 +28,32 @@ public static class HtsMapper
                 StateOfResidence = Get<string>(row, "stateofresidence"),
 
                 // ── Visit ─────────────────────────────────────────────────────
-                DateVisit = Get<DateTime?>(row, "datevisit"),
+                DateVisit = Get<DateTime?>(row, "dateofvisit", "datevisit"),
                 FirstTimeVisit = Get<string>(row, "firsttimevisit"),
 
                 // ── Testing context ───────────────────────────────────────────
                 EntryPoint = Get<string>(row, "entrypoint"),
-                IndexClient = Get<string>(row, "indexclient"),
-                PreviouslyTested = Get<string>(row, "previouslytested"),
-                TargetGroup = Get<string>(row, "targetgroup"),
+                IndexClient = Get<string>(row, "indexclientcode", "indexclient"),
+                PreviouslyTested = Get<string>(row, "previouslytestedthisyear", "previouslytested"),
+                TargetGroup = Get<string>(row, "categoryofclients", "targetgroup"),
                 Source = Get<string>(row, "source"),
                 TestingSetting = Get<string>(row, "testingsetting"),
-                Modality = Get<string>(row, "modality"),
-                CounselingType = Get<string>(row, "counselingtype"),
+                Modality = Get<string>(row, "pepfarmodalities", "modality"),
+                CounselingType = Get<string>(row, "typeofsession", "counselingtype"),
                 PregnancyStatus = Get<string>(row, "pregnancystatus"),
                 IndexTesting = Get<string>(row, "indextesting"),
 
                 // ── Previous test ─────────────────────────────────────────────
-                // SQL alias is "previousTestDate" (not "previousvisitdate")
-                PreviousTestDate = Get<DateTime?>(row, "previoustestdate"),
-                PreviousTestResult = Get<string>(row, "previoustestresult"),
-                HtsCount = Get<int?>(row, "htscount"),
+                PreviousTestDate = Get<DateTime?>(row, "dateofprevioushts", "previoustestdate"),
+                PreviousTestResult = Get<string>(row, "previoushtsresult", "previoustestresult"),
+                HtsCount = Get<int?>(row, "numberofcounts", "htscount"),
 
                 // ── HIV result ────────────────────────────────────────────────
                 FinalHivTestResult = Get<string>(row, "finalhivtestresult"),
-                DateOfHivTesting = Get<DateTime?>(row, "dateofhivtesting"),
+                // The report module reports the visit date as the date of HIV testing.
+                DateOfHivTesting = Get<DateTime?>(row, "dateofvisit", "dateofhivtesting"),
 
-                // ── Prevention ────────────────────────────────────────────────
+                // ── Prevention (not in the report module's HTS query) ────────
                 PrepOffered = Get<string>(row, "prepoffered"),
                 PrepAccepted = Get<string>(row, "prepaccepted"),
 
@@ -62,9 +66,11 @@ public static class HtsMapper
         return result;
     }
 
-    private static T? Get<T>(DataRow row, string columnName)
+    /// <summary>Value of the first of <paramref name="columnNames"/> present in the result set.</summary>
+    private static T? Get<T>(DataRow row, params string[] columnNames)
     {
-        if (!row.Table.Columns.Contains(columnName))
+        var columnName = Array.Find(columnNames, row.Table.Columns.Contains);
+        if (columnName is null)
             return default;
 
         var value = row[columnName];

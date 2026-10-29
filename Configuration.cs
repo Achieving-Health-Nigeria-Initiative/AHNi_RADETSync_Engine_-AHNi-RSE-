@@ -63,6 +63,13 @@ public class ReportSettings
     public int GlobalCycleTimeoutSeconds { get; set; } = 3600;
     public int DefaultScriptTimeoutSeconds { get; set; } = 900;
     public int MaxParallelScripts { get; set; } = 1;
+
+    /// <summary>
+    /// Folder holding the scripts named by <see cref="ScriptConfig.LocalPath"/>. A relative path is
+    /// resolved against the app's content root at startup.
+    /// </summary>
+    public string LocalScriptFolder { get; set; } = string.Empty;
+
     public List<ScriptConfig> Scripts { get; set; } = new();
 }
 
@@ -70,17 +77,26 @@ public class ScriptConfig
 {
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>
-    /// Blob path inside the container (virtual folder + filename).
-    /// Azure example : "radet/radet_query_new.sql"
-    /// Local  example: same value, resolved relative to Storage:Local:ScriptPath
-    /// </summary>
+    /// <summary>Script path inside the blob script container, e.g. "radet_query_new.sql".</summary>
     public string BlobPath { get; set; } = string.Empty;
 
+    /// <summary>
+    /// When set, the script is read from this file in Reports:LocalScriptFolder instead of
+    /// being downloaded from <see cref="BlobPath"/>.
+    /// </summary>
+    public string LocalPath { get; set; } = string.Empty;
+
     public bool Enabled { get; set; } = true;
+
+    /// <summary>:facility_id. 0 = read it from the database (base_application_user id 1).</summary>
     public long FacilityId { get; set; }
+
     public int? TimeoutSeconds { get; set; }
+
+    /// <summary>:start_date as yyyy-MM-dd; empty = the script's default.</summary>
     public string StartDate { get; set; } = string.Empty;
+
+    /// <summary>:end_date as yyyy-MM-dd; empty = today (WAT).</summary>
     public string EndDate { get; set; } = string.Empty;
 }
 

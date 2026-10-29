@@ -73,6 +73,12 @@ try
     builder.Services.Configure<ReportSettings>(builder.Configuration.GetSection("Reports"));
     builder.Services.Configure<HeartbeatSettings>(builder.Configuration.GetSection("Heartbeat"));
 
+    builder.Services.PostConfigure<ReportSettings>(s =>
+    {
+        if (!string.IsNullOrWhiteSpace(s.LocalScriptFolder))
+            s.LocalScriptFolder = Path.GetFullPath(s.LocalScriptFolder, builder.Environment.ContentRootPath);
+    });
+
     // ── CLOCK — single source of truth for WAT date ────────────────────────
     // WatClock.TodayInWat() is called ONCE per cycle in ReportOrchestrator.
     // The result is passed as CycleContext.RunDate to every script.

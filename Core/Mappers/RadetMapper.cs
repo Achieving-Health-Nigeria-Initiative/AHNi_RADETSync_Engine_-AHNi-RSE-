@@ -4,6 +4,11 @@ using System.Text.RegularExpressions;
 
 namespace AHNiRSE.Application.Mappers;
 
+/// <summary>
+/// Maps RADET query rows to <see cref="Radet"/>. Column names are those of the LAMISPlus report module's
+/// RADET query (report-script/radet.sql); where the older blob radet_query_new.sql used a different alias,
+/// that alias is accepted as a fallback.
+/// </summary>
 public static class RadetMapper
 {
     public static List<Radet> Map(DataTable table)
@@ -23,8 +28,8 @@ public static class RadetMapper
                 NdrPatientIdentifier = Get<string>(row, "ndrpatientidentifier"),
                 HospitalNumber = Get<string>(row, "hospitalnumber"),
                 UniqueId = Get<string>(row, "uniqueid"),
-                HouseholdUniqueNo = Get<string>(row, "householduniqueno"),
-                OvcUniqueId = Get<string>(row, "ovcuniqueid"),
+                HouseholdUniqueNo = Get<string>(row, "householdnumber", "householduniqueno"),
+                OvcUniqueId = Get<string>(row, "ovcnumber", "ovcuniqueid"),
                 Sex = Get<string>(row, "gender"),
                 TargetGroup = Get<string>(row, "targetgroup"),
 
@@ -35,7 +40,7 @@ public static class RadetMapper
                 CareEntryPoint = Get<string>(row, "careentry"),
 
                 DateOfRegistration = Get<DateTime?>(row, "dateofregistration"),
-                EnrollmentDate = Get<DateTime?>(row, "dateofenrollment"),
+                EnrollmentDate = Get<DateTime?>(row, "dateenrolled", "dateofenrollment"),
                 ArtStartDate = Get<DateTime?>(row, "artstartdate"),
                 LastPickupDate = Get<DateTime?>(row, "lastpickupdate"),
                 MonthsOfArvRefill = Get<decimal?>(row, "monthsofarvrefill"),
@@ -62,7 +67,7 @@ public static class RadetMapper
                 ViralLoadEligibilityStatus = Get<string>(row, "vleligibilitystatus"),
                 DateVlEligibilityStatus = Get<DateTime?>(row, "dateofvleligibilitystatus"),
 
-                CurrentArtStatus = Get<string>(row, "currentstatus"),
+                CurrentArtStatus = NormalizeStatus(Get<string>(row, "currentstatus")),
                 DateCurrentArtStatus = Get<DateTime?>(row, "currentstatusdate"),
 
                 ClientVerificationOutcome = Get<string>(row, "clientverificationoutcome"),
@@ -70,7 +75,7 @@ public static class RadetMapper
                 CauseOfDeath = Get<string>(row, "causeofdeath"),
                 VaCauseOfDeath = Get<string>(row, "vacauseofdeath"),
 
-                PreviousArtStatus = Get<string>(row, "previousstatus"),
+                PreviousArtStatus = NormalizeStatus(Get<string>(row, "previousstatus")),
                 ConfirmedDatePreviousArtStatus = Get<DateTime?>(row, "previousstatusdate"),
 
                 ArtEnrollmentSetting = Get<string>(row, "enrollmentsetting"),
@@ -80,12 +85,12 @@ public static class RadetMapper
                 CadScore = Get<int?>(row, "cadscore"),
                 TbStatus = Get<string>(row, "tbstatus"),
 
-                DateTbSampleCollection = Get<DateTime?>(row, "dateoftbsamplecollection"),
+                DateTbSampleCollection = Get<DateTime?>(row, "dateoftbsamplecollected", "dateoftbsamplecollection"),
                 TbDiagnosticTestType = Get<string>(row, "tbdiagnostictesttype"),
                 DateTbResultReceived = Get<DateTime?>(row, "dateoftbdiagnosticresultreceived"),
                 TbDiagnosticResult = Get<string>(row, "tbdiagnosticresult"),
 
-                DateXrayTbDiagnosis = Get<DateTime?>(row, "treatmentmethoddate"),
+                DateXrayTbDiagnosis = Get<DateTime?>(row, "datetbscorecad", "treatmentmethoddate"),
                 XrayTbResult = Get<string>(row, "resulttbscorecad"),
 
                 DateTbTreatmentStart = Get<DateTime?>(row, "tbtreatmentstartdate"),
@@ -113,7 +118,7 @@ public static class RadetMapper
 
                 DateCurrentDsd = Get<DateTime?>(row, "dateofcurrentdsd"),
                 CurrentDsdModel = Get<string>(row, "currentdsdmodel"),
-                CurrentDsdOutlet = Get<string>(row, "currentdsdoutlet"),
+                CurrentDsdOutlet = Get<string>(row, "dsdoutlet", "currentdsdoutlet"),
                 DateReturnToFacility = Get<DateTime?>(row, "datereturntosite"),
 
                 ScreeningForChronicConditions = null, // not in dataset
@@ -139,6 +144,12 @@ public static class RadetMapper
 
         return result;
     }
+
+    /// <summary>Any status containing "stop" is reported as "Stopped Treatment", as the report module does.</summary>
+    private static string? NormalizeStatus(string? status) =>
+        status is not null && status.Contains("stop", StringComparison.OrdinalIgnoreCase)
+            ? "Stopped Treatment"
+            : status;
 
     private static long? NormalizeViralLoadInt(string? raw)
     {
@@ -197,9 +208,11 @@ public static class RadetMapper
 
 
 
-    private static T? Get<T>(DataRow row, string column)
+    /// <summary>Value of the first of <paramref name="columns"/> present in the result set.</summary>
+    private static T? Get<T>(DataRow row, params string[] columns)
     {
-        if (!row.Table.Columns.Contains(column))
+        var column = Array.Find(columns, row.Table.Columns.Contains);
+        if (column is null)
             return default;
         var value = row[column];
         if (value == null || value == DBNull.Value)

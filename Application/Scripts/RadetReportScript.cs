@@ -48,6 +48,9 @@ public class RadetReportScript(
 
     private const string DefaultRadetBlob = "radet_query_new.sql";
 
+    /// <summary>RADET :start_date when Reports:Scripts RADET has no StartDate: the whole cohort.</summary>
+    private static readonly DateOnly RadetDefaultStart = new(1980, 1, 1);
+
     /// <summary>
     /// Reports:Scripts entries that become extra sheets of this workbook (they are not separate
     /// IReportScripts), with the blob in the radet-sql container used when an entry has no BlobPath.
@@ -383,15 +386,26 @@ public class RadetReportScript(
             .FirstOrDefault(s => string.Equals(s.Name, Name, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException($"No '{Name}' config in Reports:Scripts.");
 
-        var (startDate, endDate) = ResolveDates(cfg, context.WatToday);
+        var (startDate, endDate) = ResolveDates(cfg, context.WatToday, RadetDefaultStart);
+        var facilityId = cfg.FacilityId > 0 ? cfg.FacilityId : await database.GetFacilityIdAsync(ct);
+        var queryParameters = new QueryParameters
+        {
+            FacilityId = facilityId,
+            StartDate = startDate,
+            EndDate = endDate
+        };
 
         logger.LogInformation(
-            "[RADET] CycleId={Id} | RunDate={RunDate} | WatToday={WatToday} | Period={Start}->{End}",
+            "[RADET] CycleId={Id} | RunDate={RunDate} | WatToday={WatToday} | FacilityId={FacilityId} | " +
+            "Period={Start}->{End} | PreviousQuarterEnd={Previous} | PreviousPreviousQuarterEnd={PreviousPrevious}",
             context.CycleId,
             context.RunDate.ToString("yyyy-MM-dd"),
             context.WatToday.ToString("yyyy-MM-dd"),
-            startDate,
-            endDate);
+            facilityId,
+            startDate.ToString("yyyy-MM-dd"),
+            endDate.ToString("yyyy-MM-dd"),
+            queryParameters.PreviousQuarterEnd.ToString("yyyy-MM-dd"),
+            queryParameters.PreviousPreviousQuarterEnd.ToString("yyyy-MM-dd"));
 
         var facility = database.GetFacilityInfo();
         var safeName = SanitizeName(facility.FacilityName);
@@ -402,14 +416,8 @@ public class RadetReportScript(
         Directory.CreateDirectory(Path.GetDirectoryName(localOutput)!);
 
         using var parallelCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var queryParameters = new QueryParameters
-        {
-            FacilityId = cfg.FacilityId,
-            StartDate = startDate,
-            EndDate = endDate
-        };
 
-        var htsTask = RunNonFatalHtsQueryAsync(parallelCts.Token);
+        var htsTask = RunNonFatalHtsQueryAsync(facilityId, context.WatToday, parallelCts.Token);
         var indexTask = RunNonFatalDataTableQueryAsync("Index", "Index", queryParameters, parallelCts.Token);
         var pmtctTask = RunNonFatalDataTableQueryAsync("PMTCTHTS", "PMTCT HTS", queryParameters, parallelCts.Token);
         var maternalTask = RunNonFatalDataTableQueryAsync("Maternal", "Maternal Cohort", queryParameters, parallelCts.Token);
@@ -420,12 +428,7 @@ public class RadetReportScript(
         int radetCount;
         try
         {
-            var radetBlobPath = string.IsNullOrWhiteSpace(cfg.BlobPath) ? DefaultRadetBlob : cfg.BlobPath;
-            var radetSqlPath = await storage.DownloadAsync(radetBlobPath, ct);
-            if (!File.Exists(radetSqlPath))
-                throw new FileNotFoundException($"RADET SQL missing: {radetBlobPath}");
-
-            var radetSql = await File.ReadAllTextAsync(radetSqlPath, ct);
+            var radetSql = await LoadSqlAsync("RADET", cfg, DefaultRadetBlob, ct);
             using var radetData = await database.ExecuteScriptAsync(radetSql, queryParameters, ct);
             radetRows = RadetMapper.Map(radetData);
             radetCount = radetData.Rows.Count;
@@ -442,7 +445,7 @@ public class RadetReportScript(
         {
             logger.LogWarning(
                 "[RADET] Zero rows - FacilityId={Fid}, Period={Start}->{End}. Verify facility has active patients for this period.",
-                cfg.FacilityId,
+                facilityId,
                 startDate,
                 endDate);
         }
@@ -500,7 +503,10 @@ public class RadetReportScript(
         }
     }
 
-    private async Task<(List<Hts> Rows, int Count)> RunNonFatalHtsQueryAsync(CancellationToken ct)
+    private async Task<(List<Hts> Rows, int Count)> RunNonFatalHtsQueryAsync(
+        long facilityId,
+        DateOnly watToday,
+        CancellationToken ct)
     {
         if (!IsSheetEnabled("HTS"))
         {
@@ -508,15 +514,18 @@ public class RadetReportScript(
             return ([], 0);
         }
 
-        var blobPath = SheetBlobPath("HTS");
         try
         {
-            var sqlPath = await storage.DownloadAsync(blobPath, ct);
-            if (!File.Exists(sqlPath))
-                throw new FileNotFoundException($"HTS SQL missing: {blobPath}");
+            var htsCfg = FindScript("HTS");
+            var (startDate, endDate) = htsCfg is null
+                ? (HtsDefaultStart(watToday), watToday)
+                : ResolveDates(htsCfg, watToday, HtsDefaultStart(watToday));
+            var parameters = new QueryParameters { FacilityId = facilityId, StartDate = startDate, EndDate = endDate };
+            logger.LogInformation(
+                "[RADET] HTS period {Start}->{End}", startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
 
-            var sql = await File.ReadAllTextAsync(sqlPath, ct);
-            using var data = await database.ExecuteScriptAsync(sql, ct);
+            var sql = await LoadSqlAsync("HTS", htsCfg, SheetScripts["HTS"], ct);
+            using var data = await database.ExecuteScriptAsync(sql, parameters, ct);
             var count = data.Rows.Count;
             var rows = HtsMapper.Map(data);
             logger.LogInformation("[RADET] HTS query returned {Rows} row(s).", count);
@@ -545,14 +554,9 @@ public class RadetReportScript(
             return (null, 0);
         }
 
-        var blobPath = SheetBlobPath(scriptName);
         try
         {
-            var sqlPath = await storage.DownloadAsync(blobPath, ct);
-            if (!File.Exists(sqlPath))
-                throw new FileNotFoundException($"{sheetName} SQL missing: {blobPath}");
-
-            var sql = await File.ReadAllTextAsync(sqlPath, ct);
+            var sql = await LoadSqlAsync(sheetName, FindScript(scriptName), SheetScripts[scriptName], ct);
             var data = await database.ExecuteScriptAsync(sql, parameters, ct);
             var count = data.Rows.Count;
             logger.LogInformation("[RADET] {Sheet} query returned {Rows} row(s).", sheetName, count);
@@ -588,32 +592,61 @@ public class RadetReportScript(
     /// <summary>A sheet runs unless its Reports:Scripts entry exists and says Enabled=false.</summary>
     private bool IsSheetEnabled(string scriptName) => FindScript(scriptName)?.Enabled ?? true;
 
-    /// <summary>The configured BlobPath, or the file name the sheet's SQL has in the radet-sql container.</summary>
-    private string SheetBlobPath(string scriptName) =>
-        FindScript(scriptName)?.BlobPath is { Length: > 0 } configured
-            ? configured
-            : SheetScripts[scriptName];
+    /// <summary>
+    /// Reads a script from Reports:LocalScriptFolder when its entry has a LocalPath, otherwise
+    /// downloads its BlobPath (or <paramref name="defaultBlob"/>) from the blob script container.
+    /// </summary>
+    private async Task<string> LoadSqlAsync(string label, ScriptConfig? cfg, string defaultBlob, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(cfg?.LocalPath))
+        {
+            var folder = options.Value.LocalScriptFolder;
+            if (string.IsNullOrWhiteSpace(folder))
+                throw new InvalidOperationException(
+                    $"{label} has LocalPath '{cfg.LocalPath}' but Reports:LocalScriptFolder is not set.");
+
+            var localPath = Path.Combine(folder, cfg.LocalPath);
+            if (!File.Exists(localPath))
+                throw new FileNotFoundException($"{label} SQL missing: {localPath}", localPath);
+
+            logger.LogInformation("[RADET] {Label} SQL read from local script folder: {Path}", label, localPath);
+            return await File.ReadAllTextAsync(localPath, ct);
+        }
+
+        var blobPath = cfg?.BlobPath is { Length: > 0 } configured ? configured : defaultBlob;
+        var sqlPath = await storage.DownloadAsync(blobPath, ct);
+        if (!File.Exists(sqlPath))
+            throw new FileNotFoundException($"{label} SQL missing: {blobPath}");
+
+        return await File.ReadAllTextAsync(sqlPath, ct);
+    }
 
     /// <summary>
-    /// Computes the default reporting period (full previous calendar month).
-    /// Always receives watToday from CycleContext – never DateTime.UtcNow / Today.
+    /// Resolves :start_date and :end_date from a script entry: StartDate or <paramref name="defaultStart"/>,
+    /// and EndDate or today. Always receives watToday from CycleContext – never DateTime.UtcNow / Today.
     /// </summary>
-    private static (DateOnly start, DateOnly end) ResolveDates(ScriptConfig cfg, DateOnly watToday)
+    private static (DateOnly start, DateOnly end) ResolveDates(ScriptConfig cfg, DateOnly watToday, DateOnly defaultStart)
     {
-        var lastMonth = watToday.AddMonths(-1);
-        var defaultStart = new DateOnly(lastMonth.Year, lastMonth.Month, 1);
-        var defaultEnd = defaultStart.AddMonths(1).AddDays(-1);
-
         var start = string.IsNullOrWhiteSpace(cfg.StartDate)
             ? defaultStart : DateOnly.Parse(cfg.StartDate);
 
         var end = string.IsNullOrWhiteSpace(cfg.EndDate)
-            ? defaultEnd : DateOnly.Parse(cfg.EndDate);
+            ? watToday : DateOnly.Parse(cfg.EndDate);
 
         if (start > end)
             throw new ArgumentException($"StartDate {start} > EndDate {end}");
 
         return (start, end);
+    }
+
+    /// <summary>
+    /// HTS :start_date when Reports:Scripts HTS has no StartDate: three months before the start of the
+    /// current PEPFAR fiscal year (1 October), the window the previous blob hts.sql used.
+    /// </summary>
+    private static DateOnly HtsDefaultStart(DateOnly watToday)
+    {
+        var fiscalYearStart = new DateOnly(watToday.Month >= 10 ? watToday.Year : watToday.Year - 1, 10, 1);
+        return fiscalYearStart.AddMonths(-3);
     }
 
     private static void TryDeleteTempFile(string path)
