@@ -26,7 +26,8 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
     /// Sheet routing (per ExcelSheetDefinition):
     ///   • RawData != null  → WriteDataTableSheet  (column names become headers)
     ///   • Rows    != null  → WriteTypedSheet       (reflection + HeaderMap)
-    ///   • both null        → writes "No data" placeholder
+    ///   • no rows          → header row only (from the DataTable columns or the HeaderMap),
+    ///                        data rows left empty
     /// </summary>
     public async Task ExportMultiSheetAsync(
         IReadOnlyList<ExcelSheetDefinition> sheets,
@@ -44,7 +45,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
             var ws = wb.Worksheets.Add(SafeSheetName(sheet.SheetName));
 
             // ── Branch A: raw DataTable sheet ────────────────────────────────
-            if (sheet.RawData is not null)
+            if (sheet.RawData is { Columns.Count: > 0 })
             {
                 WriteDataTableSheet(ws, sheet.RawData);
                 continue;
@@ -52,26 +53,12 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
 
             // ── Branch B: typed-object sheet ─────────────────────────────────
             var rows = sheet.Rows?.ToList() ?? [];
+            var props = rows.Count > 0 ? GetReadableProperties(rows[0].GetType()) : [];
 
-            if (rows.Count == 0)
-            {
-                if (sheet.HeaderMap is { Count: > 0 })
-                {
-                    WriteDictionaryHeaders(ws, sheet.HeaderMap);
-                    ws.Cell(2, 1).Value = "No data";
-                    FormatWorksheet(ws, 1);
-                }
-                else
-                {
-                    ws.Cell(1, 1).Value = "No data";
-                }
-                continue;
-            }
-
-            var props = GetReadableProperties(rows[0].GetType());
             if (props.Count == 0)
             {
-                ws.Cell(1, 1).Value = "No data";
+                // No rows (or the query failed): keep the header row so the sheet's layout is unchanged.
+                WriteEmptySheet(ws, sheet.HeaderMap);
                 continue;
             }
 
@@ -96,12 +83,6 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
     /// </summary>
     private static void WriteDataTableSheet(IXLWorksheet ws, DataTable dt)
     {
-        if (dt.Columns.Count == 0)
-        {
-            ws.Cell(1, 1).Value = "No data";
-            return;
-        }
-
         // ── Headers ───────────────────────────────────────────────────────────
         for (var col = 0; col < dt.Columns.Count; col++)
         {
@@ -140,9 +121,6 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
                 ws.Row(rowIdx + 2).Style.Fill.BackgroundColor = AltRowFill;
         }
 
-        if (dt.Rows.Count == 0)
-            ws.Cell(2, 1).Value = "No data";
-
         // ── Format ────────────────────────────────────────────────────────────
         ws.RangeUsed()?.SetAutoFilter();
         foreach (var c in ws.ColumnsUsed())
@@ -163,20 +141,12 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add(SafeSheetName(sheetName));
 
-        if (rows.Count == 0)
-        {
-            ws.Cell(1, 1).Value = "No data";
-            wb.SaveAs(outputPath);
-            logger.LogInformation("[Excel] Saved empty workbook: {Path}", outputPath);
-            await Task.CompletedTask;
-            return;
-        }
-
-        var props = GetReadableProperties(rows[0].GetType());
+        var props = rows.Count > 0 ? GetReadableProperties(rows[0].GetType()) : [];
         if (props.Count == 0)
         {
-            ws.Cell(1, 1).Value = "No data";
+            WriteEmptySheet(ws, headerMap);
             wb.SaveAs(outputPath);
+            logger.LogInformation("[Excel] Saved empty workbook: {Path}", outputPath);
             await Task.CompletedTask;
             return;
         }
@@ -213,6 +183,19 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
             cell.Style.Font.FontColor = HeaderFg;
             cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         }
+    }
+
+    /// <summary>
+    /// A sheet with no data rows: just the header row from <paramref name="headerMap"/>, or a blank
+    /// sheet when no headers are known (a failed query on a sheet without a HeaderMap).
+    /// </summary>
+    private static void WriteEmptySheet(IXLWorksheet ws, IReadOnlyDictionary<string, string>? headerMap)
+    {
+        if (headerMap is not { Count: > 0 })
+            return;
+
+        WriteDictionaryHeaders(ws, headerMap);
+        FormatWorksheet(ws, 0);
     }
 
     private static void WriteDictionaryHeaders(

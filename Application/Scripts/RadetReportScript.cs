@@ -22,7 +22,7 @@ namespace AHNiRSE.Application.Scripts;
 ///
 /// Sheet 1 is FATAL: if the RADET SQL cannot be downloaded or run, nothing is uploaded.
 /// Sheets 2-7 are NON-FATAL: if a SQL download or query fails, or the sheet's
-/// Reports:Scripts entry has Enabled=false, the sheet is written as empty ("No data")
+/// Reports:Scripts entry has Enabled=false, the sheet keeps its header row with no data rows
 /// and the upload still completes. Sheets 2-7 run in parallel with RADET.
 ///
 /// DATE SAFETY – all DateTime.* calls replaced with CycleContext:
