@@ -31,6 +31,7 @@ public static class RadetMapper
                 HouseholdUniqueNo = Get<string>(row, "householdnumber", "householduniqueno"),
                 OvcUniqueId = Get<string>(row, "ovcnumber", "ovcuniqueid"),
                 Sex = Get<string>(row, "gender"),
+                TargetGroup = Get<string>(row, "targetgroup"),
 
                 CurrentWeightKg = Get<decimal?>(row, "currentweight"),
                 PregnancyStatus = Get<string>(row, "pregnancystatus"),
