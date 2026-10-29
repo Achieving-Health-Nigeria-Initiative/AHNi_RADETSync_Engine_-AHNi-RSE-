@@ -18,7 +18,6 @@ namespace AHNiRSE.Core.Models
         public string? HouseholdUniqueNo { get; set; }
         public string? OvcUniqueId { get; set; }
         public string? Sex { get; set; }
-        public string? TargetGroup { get; set; }
         public decimal? CurrentWeightKg { get; set; }
         public string? PregnancyStatus { get; set; }
         public DateTime? DateOfBirth { get; set; }
