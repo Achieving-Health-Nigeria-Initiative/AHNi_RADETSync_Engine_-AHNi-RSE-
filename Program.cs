@@ -16,7 +16,6 @@ using AHNiRSE.Shared;
 using Azure.Data.Tables;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.Hosting.WindowsServices;
-using Microsoft.Extensions.Options;
 using Serilog;
 using Serilog.Events;
 
@@ -67,26 +66,20 @@ try
         o.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
     });
 
-    // â”€â”€ CONFIGURATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── CONFIGURATION ──────────────────────────────────────────────────────
     builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("Storage"));
     builder.Services.Configure<DatabaseSettings>(builder.Configuration.GetSection("Database"));
     builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection("Auth"));
     builder.Services.Configure<ReportSettings>(builder.Configuration.GetSection("Reports"));
     builder.Services.Configure<HeartbeatSettings>(builder.Configuration.GetSection("Heartbeat"));
 
-    builder.Services.PostConfigure<StorageSettings>(s =>
-    {
-        var raw = builder.Configuration["StorageProvider"];
-        if (!string.IsNullOrWhiteSpace(raw)) s.Provider = raw;
-    });
-
-    // â”€â”€ CLOCK â€” single source of truth for WAT date â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── CLOCK — single source of truth for WAT date ────────────────────────
     // WatClock.TodayInWat() is called ONCE per cycle in ReportOrchestrator.
     // The result is passed as CycleContext.RunDate to every script.
     // No script or service may call DateTime.Today or DateTime.Now directly.
     builder.Services.AddSingleton<IReportClock, WatClock>();
 
-    // â”€â”€ AZURE STORAGE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── AZURE STORAGE ──────────────────────────────────────────────────────
     builder.Services.AddSingleton<BlobServiceClient>(sp =>
     {
         var cs = builder.Configuration.GetConnectionString("AzureBlobStorage")
@@ -103,19 +96,16 @@ try
 
     builder.Services.AddSingleton<BlobConnectionCheck>();
 
-    // â”€â”€ SHARED STATE & HEARTBEAT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── SHARED STATE & HEARTBEAT ───────────────────────────────────────────
     builder.Services.AddSingleton<FacilityRunState>();
     builder.Services.AddSingleton<AzureHeartbeatService>();
     builder.Services.AddSingleton<IHeartbeatService>(sp => sp.GetRequiredService<AzureHeartbeatService>());
 
-    // â”€â”€ STORAGE PROVIDER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    builder.Services.AddSingleton<LocalStorageProvider>();
-    builder.Services.AddSingleton<AzureStorageProvider>();
-    builder.Services.AddSingleton<IStorageProvider>(sp =>
-        StorageProviderFactory.Create(sp)
-        ?? throw new InvalidOperationException("StorageProvider not configured."));
+    // ── STORAGE PROVIDER ───────────────────────────────────────────────────
+    // SQL scripts are always downloaded from blob storage (Storage:Azure:ScriptContainerName).
+    builder.Services.AddSingleton<IStorageProvider, AzureStorageProvider>();
 
-    // â”€â”€ INFRASTRUCTURE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── INFRASTRUCTURE ─────────────────────────────────────────────────────
     builder.Services.AddSingleton<IDatabaseService, PostgresService>();
     builder.Services.AddSingleton<IExcelExporter, ExcelExporter>();
     builder.Services.AddHttpClient();
@@ -140,23 +130,21 @@ try
     builder.Services.AddSingleton<IAuthService, InstallationAuthService>();
     builder.Services.AddSingleton<IReportCycleAudit, ReportCycleAudit>();
 
-    // â”€â”€ REPORT SCRIPTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── REPORT SCRIPTS ─────────────────────────────────────────────────────
     // To add a new report: implement IReportScript, register it here.
+    // HTS, Index, PMTCT HTS, Maternal, Prep and AHD are sheets of the RADET workbook, not scripts.
     builder.Services.AddSingleton<IReportScript, RadetReportScript>();
-    builder.Services.AddSingleton<IReportScript, HtsReportScript>();
 
     builder.Services.AddSingleton<ScriptManager>();
     builder.Services.AddSingleton<ReportOrchestrator>();
 
-    // â”€â”€ WORKER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── WORKER ─────────────────────────────────────────────────────────────
     builder.Services.AddHostedService<Worker>();
 
     var host = builder.Build();
 
-    // â”€â”€ STARTUP HEALTH CHECK â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── STARTUP HEALTH CHECK ───────────────────────────────────────────────
     using var scope = host.Services.CreateScope();
-    var storageProvider = scope.ServiceProvider
-        .GetRequiredService<IOptions<StorageSettings>>().Value.Provider;
     var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
     // Log WAT time so we can confirm timezone is correct at startup
@@ -166,19 +154,16 @@ try
         clock.NowInWat().ToString("yyyy-MM-dd HH:mm:ss zzz"),
         clock.TodayInWat().ToString("yyyy-MM-dd"));
 
-    if (storageProvider.Equals("Azure", StringComparison.OrdinalIgnoreCase))
+    var check = scope.ServiceProvider.GetRequiredService<BlobConnectionCheck>();
+    bool isHealthy = await check.RunAsync();
+    if (!isHealthy)
     {
-        var check = scope.ServiceProvider.GetRequiredService<BlobConnectionCheck>();
-        bool isHealthy = await check.RunAsync();
-        if (!isHealthy)
-        {
-            startupLogger.LogWarning(
-                "[Startup] Azure Blob health check FAILED. Continuing service start; runtime retries will handle transient network/storage outages.");
-        }
-        else
-        {
-            startupLogger.LogInformation("[Startup] Azure Blob health check PASSED.");
-        }
+        startupLogger.LogWarning(
+            "[Startup] Azure Blob health check FAILED. Continuing service start; runtime retries will handle transient network/storage outages.");
+    }
+    else
+    {
+        startupLogger.LogInformation("[Startup] Azure Blob health check PASSED.");
     }
 
     startupLogger.LogInformation("[Startup] Starting host...");

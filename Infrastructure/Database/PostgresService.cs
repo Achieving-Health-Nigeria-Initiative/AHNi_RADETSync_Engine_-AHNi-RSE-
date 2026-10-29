@@ -18,7 +18,7 @@ public class PostgresService(
 {
     private readonly DatabaseSettings _cfg = options.Value;
 
-    // â”€â”€ PARAMETERLESS SQL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── PARAMETERLESS SQL ─────────────────────────────────────────────────────
     public async Task<DataTable> ExecuteScriptAsync(
         string sql,
         CancellationToken ct = default)
@@ -39,7 +39,7 @@ public class PostgresService(
             ct);
     }
 
-    // â”€â”€ PARAMETERIZED SQL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── PARAMETERIZED SQL ─────────────────────────────────────────────────────
     public async Task<DataTable> ExecuteScriptAsync(
         string sql,
         QueryParameters parameters,
@@ -86,17 +86,17 @@ public class PostgresService(
             ct);
     }
 
-    // â”€â”€ FACILITY IDENTITY â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── FACILITY IDENTITY ─────────────────────────────────────────────────────
     /// <summary>
     /// Resolves the facility name, state, and DATIM ID from the LamISPlus EMR.
-    /// Joins through patient_person â†’ organisation unit hierarchy so it works
+    /// Joins through patient_person → organisation unit hierarchy so it works
     /// regardless of which user account the service runs under.
-    /// Returns an empty <see cref="Facility"/> on any failure â€” callers must
+    /// Returns an empty <see cref="Facility"/> on any failure — callers must
     /// treat IsEmpty as a non-fatal condition and retry on the next cycle.
     /// </summary>
     public Facility GetFacilityInfo()
     {
-        // Walk the org-unit tree: patient_person â†’ facility â†’ LGA â†’ State
+        // Walk the org-unit tree: patient_person → facility → LGA → State
         // and pull DATIM_ID from the identifier table in one read.
         const string query = @"
             SELECT
@@ -145,7 +145,7 @@ public class PostgresService(
                 var state = SafeGetString(reader, "state");
 
                 logger.LogInformation(
-                    "[Database] Facility resolved â€” Name='{Name}', DatimId='{DatimId}', State='{State}'",
+                    "[Database] Facility resolved — Name='{Name}', DatimId='{DatimId}', State='{State}'",
                     facilityName, datimId, state);
 
                 return new Facility
@@ -165,10 +165,10 @@ public class PostgresService(
             logger.LogError(ex, "[Database] GetFacilityInfo failed: {Message}", ex.Message);
         }
 
-        return new Facility(); // IsEmpty = true â€” caller handles gracefully
+        return new Facility(); // IsEmpty = true — caller handles gracefully
     }
 
-    // â”€â”€ INTERNALS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── INTERNALS ─────────────────────────────────────────────────────────────
 
     private async Task<NpgsqlConnection> OpenConnectionAsync(CancellationToken ct)
     {
@@ -258,7 +258,7 @@ public class PostgresService(
             $"Database operation '{operationName}' failed after {_cfg.MaxRetryAttempts} attempt(s).");
     }
 
-    // â”€â”€ STATIC HELPERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── STATIC HELPERS ────────────────────────────────────────────────────────
 
     /// <summary>
     /// Returns empty string instead of throwing when a column is NULL or missing.

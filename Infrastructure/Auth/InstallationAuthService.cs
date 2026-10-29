@@ -128,7 +128,7 @@ public class InstallationAuthService(
                     if (_cfg.PermitWhenInconclusive)
                     {
                         logger.LogWarning(
-                            "[Auth] Verification inconclusive (WAF/proxy/timeout) â€” PermitWhenInconclusive=true, allowing cycle. DATIM={DatimId}, Device={Device}.",
+                            "[Auth] Verification inconclusive (WAF/proxy/timeout) — PermitWhenInconclusive=true, allowing cycle. DATIM={DatimId}, Device={Device}.",
                             datimId,
                             deviceId);
                         return true;

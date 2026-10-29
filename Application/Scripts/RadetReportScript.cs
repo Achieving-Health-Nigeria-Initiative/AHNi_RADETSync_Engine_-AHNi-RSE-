@@ -9,29 +9,33 @@ using Microsoft.Extensions.Options;
 namespace AHNiRSE.Application.Scripts;
 
 /// <summary>
-/// RADET report â€" six-sheet workbook.
+/// RADET report – seven-sheet workbook. Every SQL script is downloaded from the
+/// radet-sql blob container each cycle (there is no local copy).
 ///
-/// Sheet 1 â€" RADET          (radet_query_new.sql       â€" typed model, strongly mapped)
-/// Sheet 2 â€" HTS            (hts.sql                   â€" typed model, strongly mapped)
-/// Sheet 3 â€" Index          (index_report.sql          â€" raw DataTable, column names = headers)
-/// Sheet 4 â€" PMTCT HTS      (pmtct_hts_report.sql      â€" raw DataTable)
-/// Sheet 5 â€" Maternal       (maternal_cohort_report.sql â€" raw DataTable)
-/// Sheet 6 â€" Prep           (prep_query.sql            â€" raw DataTable)
+/// Sheet 1 – RADET          (radet_query_new.sql        – typed model, strongly mapped)
+/// Sheet 2 – HTS            (hts.sql                    – typed model, strongly mapped)
+/// Sheet 3 – Index          (index_report.sql           – raw DataTable, column names = headers)
+/// Sheet 4 – PMTCT HTS      (pmtct_hts_report.sql       – raw DataTable)
+/// Sheet 5 – Maternal       (maternal_cohort_report.sql – raw DataTable)
+/// Sheet 6 – Prep           (prep_query.sql             – raw DataTable)
+/// Sheet 7 – AHD            (ahd_query_raw.sql          – raw DataTable)
 ///
-/// Sheets 3-5 are NON-FATAL: if any SQL download or query fails the sheet is
-/// written as empty ("No data") and the upload still completes.
+/// Sheet 1 is FATAL: if the RADET SQL cannot be downloaded or run, nothing is uploaded.
+/// Sheets 2-7 are NON-FATAL: if a SQL download or query fails, or the sheet's
+/// Reports:Scripts entry has Enabled=false, the sheet is written as empty ("No data")
+/// and the upload still completes. Sheets 2-7 run in parallel with RADET.
 ///
-/// DATE SAFETY â€" all DateTime.* calls replaced with CycleContext:
-///   fileName  = $"..._{context.RunDate:yyyy_MM_dd}.xlsx"     â† WAT, locked at cycle start
-///   blobDest  = $"RADET/{context.RunDate:yyyy-MM-dd}/..."    â† same value, guaranteed match
-///   ResolveDates(cfg, context.WatToday)                      â† WAT, same source
+/// DATE SAFETY – all DateTime.* calls replaced with CycleContext:
+///   fileName  = $"..._{context.RunDate:yyyy_MM_dd}.xlsx"     ← WAT, locked at cycle start
+///   blobDest  = $"RADET/{context.RunDate:yyyy-MM-dd}/..."    ← same value, guaranteed match
+///   ResolveDates(cfg, context.WatToday)                      ← WAT, same source
 ///
 /// Memory strategy:
-///   â€¢ RADET and HTS DataTables disposed immediately after model-mapping.
-///   â€¢ Index / PMTCTHTS / Maternal DataTables are held through ExportMultiSheetAsync
-///     (ExcelExporter reads them column-by-column during workbook construction),
-///     then disposed en-bloc before the upload stream allocates.
-///   â€¢ The temp .xlsx is deleted after upload so %TEMP% stays clean.
+///   • RADET and HTS DataTables disposed immediately after model-mapping.
+///   • Index / PMTCTHTS / Maternal / Prep / AHD DataTables are held through
+///     ExportMultiSheetAsync (ExcelExporter reads them during workbook construction)
+///     and disposed once the workbook has been uploaded.
+///   • The temp .xlsx is deleted after upload so %TEMP% stays clean.
 /// </summary>
 public class RadetReportScript(
     IStorageProvider storage,
@@ -42,7 +46,24 @@ public class RadetReportScript(
 {
     public string Name => "RADET";
 
-    // â"€â"€ RADET header map â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+    private const string DefaultRadetBlob = "radet_query_new.sql";
+
+    /// <summary>
+    /// Reports:Scripts entries that become extra sheets of this workbook (they are not separate
+    /// IReportScripts), with the blob in the radet-sql container used when an entry has no BlobPath.
+    /// </summary>
+    internal static readonly IReadOnlyDictionary<string, string> SheetScripts =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["HTS"] = "hts.sql",
+            ["Index"] = "index_report.sql",
+            ["PMTCTHTS"] = "pmtct_hts_report.sql",
+            ["Maternal"] = "maternal_cohort_report.sql",
+            ["Prep"] = "prep_query.sql",
+            ["AHD"] = "ahd_query_raw.sql",
+        };
+
+    // ── RADET header map ──────────────────────────────────────────────────────
     private static readonly Dictionary<string, string> RadetHeaderMap =
         new(StringComparer.OrdinalIgnoreCase)
         {
@@ -352,266 +373,7 @@ public class RadetReportScript(
             ["Longitude"] = "longitude",
         };
 
-    // â"€â"€ Main entry point â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
- #if false
-    public async Task<(int RowCount, string UploadUrl)> RunAsync(
-        CycleContext context,
-        CancellationToken ct = default)
-    {
-        // â"€â"€ 1. Config â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        var cfg = options.Value.Scripts
-            .FirstOrDefault(s => string.Equals(s.Name, Name, StringComparison.OrdinalIgnoreCase))
-            ?? throw new InvalidOperationException($"No '{Name}' config in Reports:Scripts.");
-
-        var htsCfg = FindScript("HTS");
-        var indexCfg = FindScript("Index");
-        var pmtctCfg = FindScript("PMTCTHTS");
-        var maternalCfg = FindScript("Maternal");
-
-        // â"€â"€ 2. Reporting period â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        var (startDate, endDate) = ResolveDates(cfg, context.WatToday);
-
-        logger.LogInformation(
-            "[RADET] CycleId={Id} | RunDate={RunDate} | WatToday={WatToday} | Period={Start}â†’{End}",
-            context.CycleId,
-            context.RunDate.ToString("yyyy-MM-dd"),
-            context.WatToday.ToString("yyyy-MM-dd"),
-            startDate, endDate);
-
-        // â"€â"€ 3. Facility identity â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        var facility = database.GetFacilityInfo();
-        var safeName = SanitizeName(facility.FacilityName);
-
-        // â"€â"€ 4. File paths â€" both derived from context.RunDate â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        var dateSuffix = context.RunDate.ToString("yyyy_MM_dd");
-        var folderDate = context.RunDate.ToString("yyyy-MM-dd");
-        var fileName = $"{safeName}_{dateSuffix}.xlsx";
-        var localOutput = Path.Combine(
-            Path.GetTempPath(), "AHNi-RSE", context.CycleId, fileName);
-
-        Directory.CreateDirectory(Path.GetDirectoryName(localOutput)!);
-
-        using var parallelCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var queryParameters = new QueryParameters
-        {
-            FacilityId = cfg.FacilityId,
-            StartDate = startDate,
-            EndDate = endDate
-        };
-
-        var htsTask = RunNonFatalHtsQueryAsync(
-            htsCfg?.BlobPath ?? "hts/hts.sql",
-            parallelCts.Token);
-        var indexTask = RunNonFatalDataTableQueryAsync(
-            "Index",
-            indexCfg?.BlobPath ?? "index_report.sql",
-            queryParameters,
-            parallelCts.Token);
-        var pmtctTask = RunNonFatalDataTableQueryAsync(
-            "PMTCT HTS",
-            pmtctCfg?.BlobPath ?? "pmtct_hts_report.sql",
-            queryParameters,
-            parallelCts.Token);
-        var maternalTask = RunNonFatalDataTableQueryAsync(
-            "Maternal Cohort",
-            maternalCfg?.BlobPath ?? "maternal_cohort_report.sql",
-            queryParameters,
-            parallelCts.Token);
-
-        // â"€â"€ 5. RADET query (Sheet 1 â€" fatal if it fails) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        List<Radet> radetRows;
-        int radetCount;
-        try
-        {
-            var radetSqlPath = await storage.DownloadAsync(cfg.BlobPath, ct);
-            if (!File.Exists(radetSqlPath))
-                throw new FileNotFoundException($"RADET SQL missing: {cfg.BlobPath}");
-
-            var radetSql = await File.ReadAllTextAsync(radetSqlPath, ct);
-            var radetData = await database.ExecuteScriptAsync(radetSql, queryParameters, ct);
-            radetRows = RadetMapper.Map(radetData);
-            radetCount = radetData.Rows.Count;
-            radetData.Dispose();
-            radetData = null!;
-        }
-        catch
-        {
-            parallelCts.Cancel();
-            await AwaitBackgroundQueriesSafelyAsync(htsTask, indexTask, pmtctTask, maternalTask, prepTask);
-            throw;
-        }
-
-        logger.LogInformation("[RADET] RADET query returned {Rows} row(s).", radetCount);
-        if (radetCount == 0)
-            logger.LogWarning(
-                "[RADET] Zero rows â€" FacilityId={Fid}, Period={Start}â†’{End}. " +
-                "Verify facility has active patients for this period.",
-                cfg.FacilityId, startDate, endDate);
-
-        // â"€â"€ 6. HTS query (Sheet 2 â€" non-fatal) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        List<Hts> htsRows;
-        int htsCount = 0;
-        try
-        {
-            var htsBlobPath = htsCfg?.BlobPath ?? "hts/hts.sql";
-            var htsSqlPath = await storage.DownloadAsync(htsBlobPath, ct);
-            if (!File.Exists(htsSqlPath))
-                throw new FileNotFoundException($"HTS SQL missing: {htsBlobPath}");
-
-            var htsSql = await File.ReadAllTextAsync(htsSqlPath, ct);
-            var htsData = await database.ExecuteScriptAsync(htsSql, ct);
-            htsCount = htsData.Rows.Count;
-            htsRows = HtsMapper.Map(htsData);
-            htsData.Dispose();
-            htsData = null!;
-
-            logger.LogInformation("[RADET] HTS query returned {Rows} row(s).", htsCount);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[RADET] HTS query failed â€" Sheet 2 will be empty.");
-            htsRows = [];
-        }
-
-        // â"€â"€ 7. Index query (Sheet 3 â€" non-fatal) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        DataTable? indexData = null;
-        int indexCount = 0;
-        try
-        {
-            var blobPath = indexCfg?.BlobPath ?? "index_report.sql";
-            var sqlPath = await storage.DownloadAsync(blobPath, ct);
-            if (!File.Exists(sqlPath))
-                throw new FileNotFoundException($"Index SQL missing: {blobPath}");
-
-            var sql = await File.ReadAllTextAsync(sqlPath, ct);
-            indexData = await database.ExecuteScriptAsync(sql, new QueryParameters
-            {
-                FacilityId = cfg.FacilityId,
-                StartDate = startDate,
-                EndDate = endDate
-            }, ct);
-            indexCount = indexData.Rows.Count;
-            logger.LogInformation("[RADET] Index query returned {Rows} row(s).", indexCount);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[RADET] Index query failed â€" Sheet 3 will be empty.");
-            indexData = null;
-        }
-
-        // â"€â"€ 8. PMTCT HTS query (Sheet 4 â€" non-fatal) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        DataTable? pmtctHtsData = null;
-        int pmtctHtsCount = 0;
-        try
-        {
-            var blobPath = pmtctCfg?.BlobPath ?? "pmtct_hts_report.sql";
-            var sqlPath = await storage.DownloadAsync(blobPath, ct);
-            if (!File.Exists(sqlPath))
-                throw new FileNotFoundException($"PMTCT HTS SQL missing: {blobPath}");
-
-            var sql = await File.ReadAllTextAsync(sqlPath, ct);
-            pmtctHtsData = await database.ExecuteScriptAsync(sql, new QueryParameters
-            {
-                FacilityId = cfg.FacilityId,
-                StartDate = startDate,
-                EndDate = endDate
-            }, ct);
-            pmtctHtsCount = pmtctHtsData.Rows.Count;
-            logger.LogInformation("[RADET] PMTCT HTS query returned {Rows} row(s).", pmtctHtsCount);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[RADET] PMTCT HTS query failed â€" Sheet 4 will be empty.");
-            pmtctHtsData = null;
-        }
-
-        // â"€â"€ 9. Maternal Cohort query (Sheet 5 â€" non-fatal) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        DataTable? maternalData = null;
-        int maternalCount = 0;
-        try
-        {
-            var blobPath = maternalCfg?.BlobPath ?? "maternal_cohort_report.sql";
-            var sqlPath = await storage.DownloadAsync(blobPath, ct);
-            if (!File.Exists(sqlPath))
-                throw new FileNotFoundException($"Maternal SQL missing: {blobPath}");
-
-            var sql = await File.ReadAllTextAsync(sqlPath, ct);
-            maternalData = await database.ExecuteScriptAsync(sql, new QueryParameters
-            {
-                FacilityId = cfg.FacilityId,
-                StartDate = startDate,
-                EndDate = endDate
-            }, ct);
-            maternalCount = maternalData.Rows.Count;
-            logger.LogInformation("[RADET] Maternal Cohort query returned {Rows} row(s).", maternalCount);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[RADET] Maternal Cohort query failed â€" Sheet 5 will be empty.");
-            maternalData = null;
-        }
-
-        // â"€â"€ 10. Build five-sheet workbook â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        //
-        // Sheets 1-2: typed models (reflection + HeaderMap)
-        // Sheets 3-5: raw DataTable (column names become headers automatically)
-        //
-        // DataTable sheets are held in memory through ExportMultiSheetAsync â€"
-        // ClosedXML reads them cell-by-cell while building the workbook.
-        // They are disposed en-bloc immediately after SaveAs() returns.
-        var sheets = new List<ExcelSheetDefinition>
-        {
-            // Sheet 1 â€" RADET (typed)
-            new(SheetName: "RADET",
-                Rows:      radetRows.Cast<object>().ToList(),
-                HeaderMap: RadetHeaderMap),
-
-            // Sheet 2 â€" HTS (typed)
-            new(SheetName: "HTS",
-                Rows:      htsRows.Cast<object>().ToList(),
-                HeaderMap: HtsHeaderMap),
-
-            // Sheet 3 â€" Index (raw DataTable â€" null â†’ "No data" placeholder)
-            new(SheetName: "Index",
-                RawData:   indexData),
-
-            // Sheet 4 â€" PMTCT HTS (raw DataTable; HeaderMap used as fallback headers when RawData is null)
-            new(SheetName: "PMTCT HTS",
-                RawData:   pmtctHtsData,
-                HeaderMap: PmtctHtsHeaderMap),
-
-            // Sheet 5 â€" Maternal Cohort (raw DataTable; HeaderMap used as fallback headers when RawData is null)
-            new(SheetName: "Maternal Cohort",
-                RawData:   maternalData,
-                HeaderMap: MaternalCohortHeaderMap),
-        };
-
-        await exporter.ExportMultiSheetAsync(sheets, localOutput, ct);
-
-        // â"€â"€ Free all data before the upload stream allocates â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        radetRows = null!;
-        htsRows = null!;
-        indexData?.Dispose();
-        pmtctHtsData?.Dispose();
-        maternalData?.Dispose();
-        indexData = pmtctHtsData = maternalData = null;
-
-        // â"€â"€ 11. Upload â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-        var blobDest = $"RADET/{folderDate}/{fileName}";
-        var storagePath = await storage.UploadAsync(localOutput, blobDest, ct);
-
-        TryDeleteTempFile(localOutput);
-
-        logger.LogInformation(
-            "[RADET] âœ" CycleId={Id} | RADET={R} | HTS={H} | Index={I} | PMTCTHTS={P} | Maternal={M} rows | {Dest}",
-            context.CycleId, radetCount, htsCount, indexCount, pmtctHtsCount, maternalCount, blobDest);
-
-        return (radetCount, storagePath);
-    }
-
-    // â"€â"€ Helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-
- #endif
+    // ── Main entry point ──────────────────────────────────────────────────────
 
     public async Task<(int RowCount, string UploadUrl)> RunAsync(
         CycleContext context,
@@ -620,13 +382,6 @@ public class RadetReportScript(
         var cfg = options.Value.Scripts
             .FirstOrDefault(s => string.Equals(s.Name, Name, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException($"No '{Name}' config in Reports:Scripts.");
-
-        var htsCfg = FindScript("HTS");
-        var indexCfg = FindScript("Index");
-        var pmtctCfg = FindScript("PMTCTHTS");
-        var maternalCfg = FindScript("Maternal");
-        var prepCfg = FindScript("Prep");
-        var ahdCfg  = FindScript("AHD");
 
         var (startDate, endDate) = ResolveDates(cfg, context.WatToday);
 
@@ -654,42 +409,21 @@ public class RadetReportScript(
             EndDate = endDate
         };
 
-        var htsTask = RunNonFatalHtsQueryAsync(
-            htsCfg?.BlobPath ?? "hts/hts.sql",
-            parallelCts.Token);
-        var indexTask = RunNonFatalDataTableQueryAsync(
-            "Index",
-            indexCfg?.BlobPath ?? "index_report.sql",
-            queryParameters,
-            parallelCts.Token);
-        var pmtctTask = RunNonFatalDataTableQueryAsync(
-            "PMTCT HTS",
-            pmtctCfg?.BlobPath ?? "pmtct_hts_report.sql",
-            queryParameters,
-            parallelCts.Token);
-        var maternalTask = RunNonFatalDataTableQueryAsync(
-            "Maternal Cohort",
-            maternalCfg?.BlobPath ?? "maternal_cohort_report.sql",
-            queryParameters,
-            parallelCts.Token);
-        var prepTask = RunNonFatalDataTableQueryAsync(
-            "Prep",
-            prepCfg?.BlobPath ?? "prep_query.sql",
-            queryParameters,
-            parallelCts.Token);
-        var ahdTask = RunNonFatalDataTableQueryAsync(
-            "AHD",
-            ahdCfg?.BlobPath ?? "ahd_query_raw.sql",
-            queryParameters,
-            parallelCts.Token);
+        var htsTask = RunNonFatalHtsQueryAsync(parallelCts.Token);
+        var indexTask = RunNonFatalDataTableQueryAsync("Index", "Index", queryParameters, parallelCts.Token);
+        var pmtctTask = RunNonFatalDataTableQueryAsync("PMTCTHTS", "PMTCT HTS", queryParameters, parallelCts.Token);
+        var maternalTask = RunNonFatalDataTableQueryAsync("Maternal", "Maternal Cohort", queryParameters, parallelCts.Token);
+        var prepTask = RunNonFatalDataTableQueryAsync("Prep", "Prep", queryParameters, parallelCts.Token);
+        var ahdTask = RunNonFatalDataTableQueryAsync("AHD", "AHD", queryParameters, parallelCts.Token);
 
         List<Radet> radetRows;
         int radetCount;
         try
         {
-            var radetSqlPath = await storage.DownloadAsync(cfg.BlobPath, ct);
+            var radetBlobPath = string.IsNullOrWhiteSpace(cfg.BlobPath) ? DefaultRadetBlob : cfg.BlobPath;
+            var radetSqlPath = await storage.DownloadAsync(radetBlobPath, ct);
             if (!File.Exists(radetSqlPath))
-                throw new FileNotFoundException($"RADET SQL missing: {cfg.BlobPath}");
+                throw new FileNotFoundException($"RADET SQL missing: {radetBlobPath}");
 
             var radetSql = await File.ReadAllTextAsync(radetSqlPath, ct);
             using var radetData = await database.ExecuteScriptAsync(radetSql, queryParameters, ct);
@@ -766,10 +500,15 @@ public class RadetReportScript(
         }
     }
 
-    private async Task<(List<Hts> Rows, int Count)> RunNonFatalHtsQueryAsync(
-        string blobPath,
-        CancellationToken ct)
+    private async Task<(List<Hts> Rows, int Count)> RunNonFatalHtsQueryAsync(CancellationToken ct)
     {
+        if (!IsSheetEnabled("HTS"))
+        {
+            logger.LogInformation("[RADET] HTS sheet disabled in Reports:Scripts - Sheet 2 will be empty.");
+            return ([], 0);
+        }
+
+        var blobPath = SheetBlobPath("HTS");
         try
         {
             var sqlPath = await storage.DownloadAsync(blobPath, ct);
@@ -795,11 +534,18 @@ public class RadetReportScript(
     }
 
     private async Task<(DataTable? Data, int Count)> RunNonFatalDataTableQueryAsync(
+        string scriptName,
         string sheetName,
-        string blobPath,
         QueryParameters parameters,
         CancellationToken ct)
     {
+        if (!IsSheetEnabled(scriptName))
+        {
+            logger.LogInformation("[RADET] {Sheet} sheet disabled in Reports:Scripts - sheet will be empty.", sheetName);
+            return (null, 0);
+        }
+
+        var blobPath = SheetBlobPath(scriptName);
         try
         {
             var sqlPath = await storage.DownloadAsync(blobPath, ct);
@@ -839,9 +585,18 @@ public class RadetReportScript(
         options.Value.Scripts.FirstOrDefault(
             s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>A sheet runs unless its Reports:Scripts entry exists and says Enabled=false.</summary>
+    private bool IsSheetEnabled(string scriptName) => FindScript(scriptName)?.Enabled ?? true;
+
+    /// <summary>The configured BlobPath, or the file name the sheet's SQL has in the radet-sql container.</summary>
+    private string SheetBlobPath(string scriptName) =>
+        FindScript(scriptName)?.BlobPath is { Length: > 0 } configured
+            ? configured
+            : SheetScripts[scriptName];
+
     /// <summary>
     /// Computes the default reporting period (full previous calendar month).
-    /// Always receives watToday from CycleContext â€" never DateTime.UtcNow / Today.
+    /// Always receives watToday from CycleContext – never DateTime.UtcNow / Today.
     /// </summary>
     private static (DateOnly start, DateOnly end) ResolveDates(ScriptConfig cfg, DateOnly watToday)
     {

@@ -80,10 +80,6 @@
   </ItemGroup>
 
 	<ItemGroup>
-		<Content Include="Scripts\**\*.sql">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
-		</Content>
 		<Content Include="Install.bat">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<CopyToPublishDirectory>Always</CopyToPublishDirectory>

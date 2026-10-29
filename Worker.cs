@@ -41,7 +41,7 @@ public class Worker(
         if (heartbeat is AzureHeartbeatService azureHb)
             await azureHb.EnsureTableExistsAsync(stoppingToken);
 
-        // â”€â”€ Pre-load facility identity so the first heartbeat ping has real data â”€â”€
+        // ── Pre-load facility identity so the first heartbeat ping has real data ──
         // If this fails or returns no identity, PingAsync will skip safely until
         // ReportOrchestrator populates FacilityRunState after the first report cycle.
         await LoadFacilityIdentityAsync(stoppingToken);
@@ -52,7 +52,7 @@ public class Worker(
             timeZone.Id, _reportSettings.RunOnStartup,
             _heartbeatSettings.IntervalMinutes, state.HasIdentity);
 
-        // â”€â”€ Two fully independent loops â€” neither awaits the other â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Two fully independent loops — neither awaits the other ────────────
         var heartbeatLoop = RunHeartbeatLoopAsync(stoppingToken);
         var reportLoop = RunReportLoopAsync(timeZone, schedules, stoppingToken);
 
@@ -61,13 +61,13 @@ public class Worker(
         logger.LogInformation("[Worker] Both loops stopped. Service shutting down.");
     }
 
-    // â”€â”€ STARTUP IDENTITY LOAD â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── STARTUP IDENTITY LOAD ─────────────────────────────────────────────────
     // Runs once before the loops start. Loads facility name + DatimId from the
     // orchestrator so the very first heartbeat ping uses the real PartitionKey
     // instead of writing a blank DESKTOP-XXXX row to Azure Table Storage.
     //
     // If it fails for any reason (DB offline, config missing, etc.) the service
-    // still starts â€” PingAsync guards on HasIdentity and skips safely until the
+    // still starts — PingAsync guards on HasIdentity and skips safely until the
     // first report cycle populates FacilityRunState via ReportOrchestrator.
  #endif
 
@@ -140,7 +140,7 @@ public class Worker(
             if (string.IsNullOrWhiteSpace(datimId))
             {
                 logger.LogWarning(
-                    "[Worker] Facility identity not available at startup â€” " +
+                    "[Worker] Facility identity not available at startup — " +
                     "heartbeat will skip until first report cycle completes.");
                 return;
             }
@@ -153,27 +153,27 @@ public class Worker(
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            // Service stopped before identity load completed â€” clean exit
+            // Service stopped before identity load completed — clean exit
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex,
-                "[Worker] Could not load facility identity at startup â€” " +
+                "[Worker] Could not load facility identity at startup — " +
                 "heartbeat will skip until first report cycle completes.");
         }
     }
 
-    // â”€â”€ HEARTBEAT LOOP â€” runs every N minutes, always â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── HEARTBEAT LOOP — runs every N minutes, always ─────────────────────────
     // Must never crash. Must never wait for the report loop.
     private async Task RunHeartbeatLoopAsync(CancellationToken ct)
     {
         var interval = TimeSpan.FromMinutes(Math.Max(1, _heartbeatSettings.IntervalMinutes));
         logger.LogInformation(
-            "[Heartbeat] Loop started â€” pinging every {Interval} min.",
+            "[Heartbeat] Loop started — pinging every {Interval} min.",
             _heartbeatSettings.IntervalMinutes);
 
         // First ping fires immediately. If identity not yet loaded, PingAsync
-        // skips gracefully â€” no blank rows written to Table Storage.
+        // skips gracefully — no blank rows written to Table Storage.
         await SafePingAsync(ct);
 
         while (!ct.IsCancellationRequested)
@@ -186,7 +186,7 @@ public class Worker(
             }
             catch (OperationCanceledException)
             {
-                break; // service is stopping â€” exit cleanly
+                break; // service is stopping — exit cleanly
             }
 
             await SafePingAsync(ct);
@@ -203,13 +203,13 @@ public class Worker(
         }
         catch (Exception ex)
         {
-            // CRITICAL: this catch must exist â€” heartbeat loop must NEVER crash
+            // CRITICAL: this catch must exist — heartbeat loop must NEVER crash
             logger.LogWarning(
                 "[Heartbeat] SafePing swallowed unexpected error: {Message}", ex.Message);
         }
     }
 
-    // â”€â”€ REPORT LOOP â€” cron-scheduled, heavy, independent of heartbeat â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── REPORT LOOP — cron-scheduled, heavy, independent of heartbeat ─────────
     private async Task RunReportLoopAsync(
         TimeZoneInfo timeZone,
         List<ScheduleEntry> schedules,
@@ -298,7 +298,7 @@ public class Worker(
         }
     }
 
-    // â”€â”€ Schedule helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Schedule helpers ──────────────────────────────────────────────────────
 
     private List<ScheduleEntry> ResolveSchedules()
     {

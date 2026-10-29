@@ -11,7 +11,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
     private static readonly XLColor HeaderFg = XLColor.Black;
     private static readonly XLColor AltRowFill = XLColor.FromHtml("#F2F2F2");
 
-    // â”€â”€ Public: single-sheet (unchanged signature) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Public: single-sheet (unchanged signature) ────────────────────────────
     public Task ExportAsync(
         IEnumerable<object> data,
         string outputPath,
@@ -19,14 +19,14 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
         CancellationToken ct = default)
         => ExportSingleSheetAsync(data, outputPath, "Report", headerMap, ct);
 
-    // â”€â”€ Public: multi-sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Public: multi-sheet ───────────────────────────────────────────────────
     /// <summary>
     /// Writes every sheet in <paramref name="sheets"/> into one .xlsx workbook.
     ///
     /// Sheet routing (per ExcelSheetDefinition):
-    ///   â€¢ RawData != null  â†’ WriteDataTableSheet  (column names become headers)
-    ///   â€¢ Rows    != null  â†’ WriteTypedSheet       (reflection + HeaderMap)
-    ///   â€¢ both null        â†’ writes "No data" placeholder
+    ///   • RawData != null  → WriteDataTableSheet  (column names become headers)
+    ///   • Rows    != null  → WriteTypedSheet       (reflection + HeaderMap)
+    ///   • both null        → writes "No data" placeholder
     /// </summary>
     public async Task ExportMultiSheetAsync(
         IReadOnlyList<ExcelSheetDefinition> sheets,
@@ -43,14 +43,14 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
 
             var ws = wb.Worksheets.Add(SafeSheetName(sheet.SheetName));
 
-            // â”€â”€ Branch A: raw DataTable sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Branch A: raw DataTable sheet ────────────────────────────────
             if (sheet.RawData is not null)
             {
                 WriteDataTableSheet(ws, sheet.RawData);
                 continue;
             }
 
-            // â”€â”€ Branch B: typed-object sheet â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // ── Branch B: typed-object sheet ─────────────────────────────────
             var rows = sheet.Rows?.ToList() ?? [];
 
             if (rows.Count == 0)
@@ -87,7 +87,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
         await Task.CompletedTask;
     }
 
-    // â”€â”€ Private: write a DataTable directly (no model class required) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Private: write a DataTable directly (no model class required) ─────────
     /// <summary>
     /// Writes <paramref name="dt"/> to <paramref name="ws"/>.
     /// Row 1 = DataColumn.ColumnName values (bold, centred).
@@ -102,7 +102,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
             return;
         }
 
-        // â”€â”€ Headers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Headers ───────────────────────────────────────────────────────────
         for (var col = 0; col < dt.Columns.Count; col++)
         {
             var cell = ws.Cell(1, col + 1);
@@ -112,7 +112,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
             cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         }
 
-        // â”€â”€ Data rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Data rows ─────────────────────────────────────────────────────────
         for (var rowIdx = 0; rowIdx < dt.Rows.Count; rowIdx++)
         {
             var dataRow = dt.Rows[rowIdx];
@@ -143,13 +143,13 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
         if (dt.Rows.Count == 0)
             ws.Cell(2, 1).Value = "No data";
 
-        // â”€â”€ Format â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Format ────────────────────────────────────────────────────────────
         ws.RangeUsed()?.SetAutoFilter();
         foreach (var c in ws.ColumnsUsed())
             c.AdjustToContents(1, Math.Max(dt.Rows.Count + 1, 2), 10, 50);
     }
 
-    // â”€â”€ Private: single-sheet helper (unchanged) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Private: single-sheet helper (unchanged) ──────────────────────────────
     private async Task ExportSingleSheetAsync(
         IEnumerable<object> data,
         string outputPath,
@@ -190,7 +190,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger) : IExcelExporter
         await Task.CompletedTask;
     }
 
-    // â”€â”€ Typed-sheet helpers (unchanged) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ── Typed-sheet helpers (unchanged) ───────────────────────────────────────
     private static List<PropertyInfo> GetReadableProperties(Type type)
         => type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                .Where(p => p.CanRead)

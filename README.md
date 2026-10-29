@@ -5,7 +5,7 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 1. Runs scheduled report cycles (cron-based)
 2. Queries LAMISPlus PostgreSQL
 3. Builds Excel workbooks
-4. Uploads reports to Azure Blob (or local storage)
+4. Uploads reports to Azure Blob
 5. Sends heartbeat status so BayCentral can track facility online/offline state
 
 ## Current Runtime Design
@@ -35,7 +35,7 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 - `ScriptManager` supports bounded parallel script execution using:
   - `Reports:MaxParallelScripts` (default 1)
 - `RadetReportScript` runs non-fatal sheet queries in parallel:
-  - HTS, Index, PMTCT HTS, Maternal
+  - HTS, Index, PMTCT HTS, Maternal, Prep, AHD
 - RADET query remains fatal anchor query.
 - Non-fatal query failure produces empty sheet, not full cycle failure.
 
@@ -43,11 +43,24 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 
 `RadetReportScript` generates one workbook with these sheets:
 
-1. RADET (typed mapping)
-2. HTS (typed mapping)
-3. Index (raw DataTable)
-4. PMTCT HTS (raw DataTable)
-5. Maternal Cohort (raw DataTable)
+| Sheet | Reports:Scripts entry | SQL blob (`radet-sql` container) |
+|---|---|---|
+| 1. RADET (typed mapping) | `RADET` | `radet_query_new.sql` |
+| 2. HTS (typed mapping) | `HTS` | `hts.sql` |
+| 3. Index (raw DataTable) | `Index` | `index_report.sql` |
+| 4. PMTCT HTS (raw DataTable) | `PMTCTHTS` | `pmtct_hts_report.sql` |
+| 5. Maternal Cohort (raw DataTable) | `Maternal` | `maternal_cohort_report.sql` |
+| 6. Prep (raw DataTable) | `Prep` | `prep_query.sql` |
+| 7. AHD (raw DataTable) | `AHD` | `ahd_query_raw.sql` |
+
+SQL scripts:
+
+- Every script is downloaded from the `Storage:Azure:ScriptContainerName` blob container at the start of
+  each cycle. Nothing is bundled with the service, so updating a blob updates every facility on its next run.
+- `BlobPath` may include a folder; if that path is missing, the file name at the container root is tried.
+- If the RADET script cannot be downloaded the cycle fails and nothing is uploaded. If a sheet 2-7 script
+  cannot be downloaded or run, that sheet is empty and the workbook is still uploaded.
+- `Enabled: false` on a sheet entry leaves that sheet empty without running its query.
 
 Destination pattern:
 
@@ -88,10 +101,9 @@ Main file: `appsettings.json`
 
 Important keys:
 
-- `StorageProvider`: `Azure` or `Local`
-- `Storage:Azure:ContainerName`
-- `Storage:Azure:ScriptContainerName`
-- `Storage:Azure:LocalScriptPath`
+- `Storage:Azure:ContainerName` (workbook uploads)
+- `Storage:Azure:ScriptContainerName` (SQL scripts)
+- `Reports:Scripts` (sheet SQL blob paths and on/off switches)
 - `Database:ConnectionString`
 - `Reports:CronSchedule` and/or `Reports:CronSchedules`
 - `Reports:RunOnStartup`
@@ -125,7 +137,6 @@ Current publish behavior:
 
 - `appsettings.json` is included
 - `appsettings.Development*.json` is excluded
-- SQL scripts under `Scripts\` are included
 - Release PDB symbols are disabled
 
 Zip package:
@@ -185,7 +196,7 @@ Expected behavior when network is down:
 
 - Check storage connection string
 - Check blob container names
-- Check SQL script paths in script container and local fallback
+- Check the SQL script blob paths in `Reports:Scripts` exist in the script container
 
 ### Auth blocking runs
 

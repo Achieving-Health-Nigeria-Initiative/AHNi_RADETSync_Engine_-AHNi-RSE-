@@ -1,9 +1,8 @@
 ﻿namespace AHNiRSE.Core.Interfaces;
 
 /// <summary>
-/// Abstraction over any file storage backend.
-/// Implementations: LocalStorageProvider, AzureStorageProvider.
-/// The active provider is chosen at startup via StorageSettings.Provider.
+/// Abstraction over the file storage backend (AzureStorageProvider): SQL scripts are
+/// downloaded from the script container and finished workbooks uploaded to the output container.
 /// </summary>
 public interface IStorageProvider
 {

@@ -1,12 +1,10 @@
 ﻿namespace AHNiRSE.Configuration;
 
-// â”€â”€ Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Storage ───────────────────────────────────────────────────────────────────
 
 public class StorageSettings
 {
-    public string Provider { get; set; } = "Local";
     public AzureStorageOptions Azure { get; set; } = new();
-    public LocalStorageOptions Local { get; set; } = new();
 }
 
 public class AzureStorageOptions
@@ -18,17 +16,10 @@ public class AzureStorageOptions
     public int DownloadRetryDelaySeconds { get; set; } = 5;
     public int DownloadTimeoutSeconds { get; set; } = 300;
     public string TempDownloadPath { get; set; } = string.Empty;
-    public string LocalScriptPath { get; set; } = string.Empty;
     public bool CleanStagingAfterDeploy { get; set; } = true;
 }
 
-public class LocalStorageOptions
-{
-    public string ScriptPath { get; set; } = string.Empty;
-    public string OutputPath { get; set; } = string.Empty;
-}
-
-// â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Database ──────────────────────────────────────────────────────────────────
 
 public class DatabaseSettings
 {
@@ -38,7 +29,7 @@ public class DatabaseSettings
     public int RetryDelaySeconds { get; set; } = 2;
 }
 
-// â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Auth ──────────────────────────────────────────────────────────────────────
 
 public class AuthSettings
 {
@@ -58,7 +49,7 @@ public class AuthSettings
     public bool PermitWhenInconclusive { get; set; } = false;
 }
 
-// â”€â”€ Reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Reports ───────────────────────────────────────────────────────────────────
 
 public class ReportSettings
 {

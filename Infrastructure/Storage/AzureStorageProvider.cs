@@ -11,17 +11,16 @@ namespace AHNiRSE.Infrastructure.Storage;
 public class AzureStorageProvider(
     BlobServiceClient blobClient,
     IOptions<StorageSettings> options,
-    IHostEnvironment env,
     ILogger<AzureStorageProvider> logger) : IStorageProvider
 {
     private readonly AzureStorageOptions _cfg = options.Value.Azure;
 
-    public Task<string> DownloadAsync(string sourcePath, CancellationToken ct = default)
-    {
-        return DownloadWithFallbackAsync(sourcePath, ct);
-    }
-
-    private async Task<string> DownloadWithFallbackAsync(string sourcePath, CancellationToken ct)
+    /// <summary>
+    /// Downloads a SQL script from the script container into the staging folder and returns the
+    /// staged path. Scripts always come from blob storage: if the blob cannot be found or
+    /// downloaded after the configured retries, this throws rather than using a local copy.
+    /// </summary>
+    public async Task<string> DownloadAsync(string sourcePath, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(sourcePath))
         {
@@ -30,7 +29,6 @@ public class AzureStorageProvider(
 
         var normalizedSourcePath = sourcePath.Replace('\\', '/').TrimStart('/');
         var scriptContainerName = ResolveScriptContainerName();
-        var fallbackLocalPath = ResolveLocalScriptPath(normalizedSourcePath);
         var stagedPath = ResolveStagingScriptPath(scriptContainerName, normalizedSourcePath);
         var candidateBlobNames = BuildBlobCandidates(normalizedSourcePath);
 
@@ -73,12 +71,17 @@ public class AzureStorageProvider(
                     return stagedPath;
                 }
 
-                logger.LogWarning(
-                    "[AzureStorage] Script not found in blob container '{Container}' for path '{Path}'. Candidates: {Candidates}.",
-                    scriptContainerName,
-                    normalizedSourcePath,
-                    string.Join(", ", candidateBlobNames));
-                break;
+                throw new FileNotFoundException(
+                    $"SQL script '{normalizedSourcePath}' not found in blob container '{scriptContainerName}' " +
+                    $"(tried: {string.Join(", ", candidateBlobNames)}).");
+            }
+            catch (FileNotFoundException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested && attempt < maxAttempts)
             {
@@ -115,28 +118,16 @@ public class AzureStorageProvider(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(
-                    ex,
-                    "[AzureStorage] Blob script download failed after {Attempt} attempt(s). Falling back to local script path.",
-                    attempt);
-                break;
+                throw new StorageException(
+                    $"Downloading SQL script '{normalizedSourcePath}' from blob container '{scriptContainerName}' " +
+                    $"failed after {attempt} attempt(s).",
+                    ex);
             }
         }
 
-        if (File.Exists(fallbackLocalPath))
-        {
-            logger.LogWarning(
-                "[AzureStorage] Using local fallback script: {Path}. " +
-                "Blob source was unavailable or missing in container '{Container}'.",
-                fallbackLocalPath,
-                scriptContainerName);
-            return fallbackLocalPath;
-        }
-
-        throw new FileNotFoundException(
-            $"SQL script '{normalizedSourcePath}' not found in blob container '{scriptContainerName}' " +
-            $"and local fallback path '{fallbackLocalPath}'.",
-            fallbackLocalPath);
+        throw new StorageException(
+            $"Downloading SQL script '{normalizedSourcePath}' from blob container '{scriptContainerName}' " +
+            $"failed after {maxAttempts} attempt(s).");
     }
 
     public async Task<string> UploadAsync(
@@ -225,22 +216,6 @@ public class AzureStorageProvider(
         }
 
         throw new StorageException($"Azure upload failed after {maxAttempts} attempt(s) for blob '{blobName}'.");
-    }
-
-    private string ResolveLocalScriptPath(string sourcePath)
-    {
-        var basePath = Path.IsPathRooted(_cfg.LocalScriptPath)
-            ? _cfg.LocalScriptPath
-            : Path.Combine(env.ContentRootPath, _cfg.LocalScriptPath);
-
-        var nestedPath = Path.Combine(basePath, sourcePath.Replace('/', Path.DirectorySeparatorChar));
-        if (File.Exists(nestedPath))
-        {
-            return nestedPath;
-        }
-
-        var fileName = Path.GetFileName(sourcePath);
-        return Path.Combine(basePath, fileName);
     }
 
     private string ResolveStagingScriptPath(string scriptContainerName, string sourcePath)

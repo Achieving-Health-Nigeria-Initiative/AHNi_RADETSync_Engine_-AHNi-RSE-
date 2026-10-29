@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using AHNiRSE.Application.Scripts;
 using AHNiRSE.Configuration;
 using AHNiRSE.Core.Interfaces;
 using AHNiRSE.Infrastructure.Memory;
@@ -33,8 +34,10 @@ public class ScriptManager(
 
         var toRun = scripts.Where(s => enabledConfigs.ContainsKey(s.Name)).ToList();
 
+        // Sheet entries (HTS, Index, ...) are run by RadetReportScript, not as scripts of their own.
         foreach (var missing in enabledConfigs.Keys
-                     .Except(toRun.Select(s => s.Name), StringComparer.OrdinalIgnoreCase))
+                     .Except(toRun.Select(s => s.Name), StringComparer.OrdinalIgnoreCase)
+                     .Where(name => !RadetReportScript.SheetScripts.ContainsKey(name)))
         {
             logger.LogWarning(
                 "[ScriptManager] Config has '{Script}' enabled but no IReportScript registered for it.", missing);
