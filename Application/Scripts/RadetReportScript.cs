@@ -14,7 +14,7 @@ namespace AHNiRSE.Application.Scripts;
 ///
 /// Sheet 1 – RADET          (radet_query_new.sql        – typed model, strongly mapped)
 /// Sheet 2 – HTS            (hts.sql                    – typed model, strongly mapped)
-/// Sheet 3 – Index          (index_report.sql           – raw DataTable, column names = headers)
+/// Sheet 3 – Index          (index.sql                  – report module index elicitation, mapped to the sheet's 18 headers)
 /// Sheet 4 – PMTCT HTS      (pmtct_hts_report.sql       – raw DataTable)
 /// Sheet 5 – Maternal       (maternal_cohort_report.sql – raw DataTable)
 /// Sheet 6 – Prep           (prep_query.sql             – raw DataTable)
@@ -65,6 +65,10 @@ public class RadetReportScript(
             ["Prep"] = "prep_query.sql",
             ["AHD"] = "ahd_query_raw.sql",
         };
+
+    // ── Index headers (empty Index sheet keeps them) ──────────────────────────
+    private static readonly Dictionary<string, string> IndexHeaderMap =
+        IndexMapper.Headers.ToDictionary(h => h, h => h);
 
     // ── RADET header map ──────────────────────────────────────────────────────
     private static readonly Dictionary<string, string> RadetHeaderMap =
@@ -418,7 +422,10 @@ public class RadetReportScript(
         using var parallelCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         var htsTask = RunNonFatalHtsQueryAsync(facilityId, context.WatToday, parallelCts.Token);
-        var indexTask = RunNonFatalDataTableQueryAsync("Index", "Index", queryParameters, parallelCts.Token);
+        var (indexStart, indexEnd) = ResolveDates(FindScript("Index"), context.WatToday, _ => RadetDefaultStart);
+        var indexTask = RunNonFatalIndexQueryAsync(
+            new QueryParameters { FacilityId = facilityId, StartDate = indexStart, EndDate = indexEnd },
+            parallelCts.Token);
         var pmtctTask = RunNonFatalDataTableQueryAsync("PMTCTHTS", "PMTCT HTS", queryParameters, parallelCts.Token);
         var maternalTask = RunNonFatalDataTableQueryAsync("Maternal", "Maternal Cohort", queryParameters, parallelCts.Token);
         var prepTask = RunNonFatalDataTableQueryAsync("Prep", "Prep", queryParameters, parallelCts.Token);
@@ -465,7 +472,7 @@ public class RadetReportScript(
             new(SheetName: "HTS",
                 Rows:      htsResult.Rows.Cast<object>().ToList(),
                 HeaderMap: HtsHeaderMap),
-            new(SheetName: "Index",           RawData: indexResult.Data),
+            new(SheetName: "Index",           RawData: indexResult.Data,    HeaderMap: IndexHeaderMap),
             new(SheetName: "PMTCT HTS",       RawData: pmtctResult.Data,    HeaderMap: PmtctHtsHeaderMap),
             new(SheetName: "Maternal Cohort", RawData: maternalResult.Data, HeaderMap: MaternalCohortHeaderMap),
             new(SheetName: "Prep",            RawData: prepResult.Data,    HeaderMap: PrepHeaderMap),
@@ -538,6 +545,59 @@ public class RadetReportScript(
             logger.LogWarning(ex, "[RADET] HTS query failed - Sheet 2 will be empty.");
             return ([], 0);
         }
+    }
+
+    /// <summary>
+    /// Index sheet: the report module's index elicitation query, reshaped by <see cref="IndexMapper"/> to the
+    /// sheet's 18 headers, with "Accepted INS" codeset ids resolved to their display text.
+    /// </summary>
+    private async Task<(DataTable? Data, int Count)> RunNonFatalIndexQueryAsync(
+        QueryParameters parameters,
+        CancellationToken ct)
+    {
+        logger.LogInformation(
+            "[RADET] Index period {Start}->{End}",
+            parameters.StartDate.ToString("yyyy-MM-dd"),
+            parameters.EndDate.ToString("yyyy-MM-dd"));
+
+        var (data, count) = await RunNonFatalDataTableQueryAsync("Index", "Index", parameters, ct);
+        if (data is null)
+            return (null, 0);
+
+        try
+        {
+            var codesets = await LoadCodesetDisplaysAsync(IndexMapper.CodesetIds(data), ct);
+            var mapped = IndexMapper.Map(data, codesets, parameters.EndDate);
+            if (!ReferenceEquals(mapped, data))
+                data.Dispose();
+            return (mapped, count);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            data.Dispose();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[RADET] Index rows could not be mapped - sheet will be empty.");
+            data.Dispose();
+            return (null, 0);
+        }
+    }
+
+    /// <summary>base_application_codeset display text for the given ids.</summary>
+    private async Task<IReadOnlyDictionary<long, string>> LoadCodesetDisplaysAsync(
+        IEnumerable<long> ids,
+        CancellationToken ct)
+    {
+        var list = ids.ToList();
+        if (list.Count == 0)
+            return new Dictionary<long, string>();
+
+        // ids are parsed longs, so inlining them is safe
+        using var table = await database.ExecuteScriptAsync(
+            $"SELECT id, display FROM base_application_codeset WHERE id IN ({string.Join(",", list)})", ct);
+        return table.Rows.Cast<DataRow>().ToDictionary(r => Convert.ToInt64(r[0]), r => Convert.ToString(r[1]) ?? string.Empty);
     }
 
     private async Task<(DataTable? Data, int Count)> RunNonFatalDataTableQueryAsync(
