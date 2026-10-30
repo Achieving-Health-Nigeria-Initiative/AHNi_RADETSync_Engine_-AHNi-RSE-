@@ -56,9 +56,20 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 SQL scripts:
 
 - A script entry with a `LocalPath` is read from `Reports:LocalScriptFolder` (relative paths resolve against
-  the app's content root). RADET, HTS and Index currently do this: they are the LAMISPlus report module 2.7.3
-  queries (`ReportRepository.getRadetData` / `getHtsReport` / `getFamilyIndexReport`) kept in
-  `RADETSyncEngine\report-script\`.
+  the app's content root). All seven sheets currently do this. The scripts in `RADETSyncEngine\report-script\`
+  are the LAMISPlus report module 2.7.3 queries, unchanged:
+
+  | Sheet | Script | Report module source | Default start |
+  |---|---|---|---|
+  | RADET | `radet.sql` | `ReportRepository.getRadetData` (+ facility-name CASE) | 1980-01-01 |
+  | HTS | `hts.sql` | `ReportRepository.getHtsReport` | 1 July before the end date's fiscal year |
+  | Index | `index.sql` | `ReportRepository.getFamilyIndexReport` (no dates) | - |
+  | PMTCT HTS | `pmtct_hts.sql` | `ReportRepository.getPmtctReportMetaData` (Pepfar) | 1980-01-01 |
+  | Maternal Cohort | `maternal.sql` | `query.yml` `pmtct-maternal-cohort-query` | 1980-01-01 |
+  | Prep | `prep.sql` | `query.yml` `prep-query` | 1985-01-01 |
+  | AHD | `ahd.sql` | `query.yml` `ahd-query` | 1985-01-01 |
+
+  `query.yml` is the one the report module runs with (`#Released: 2026-09-18`). End dates default to today.
 - Every other script is downloaded from the `Storage:Azure:ScriptContainerName` blob container at the start
   of each cycle, so updating a blob updates every facility on its next run.
 - `BlobPath` may include a folder; if that path is missing, the file name at the container root is tried.
@@ -66,9 +77,9 @@ SQL scripts:
   cannot be loaded or run, that sheet keeps its headers with no rows and the workbook is still uploaded.
 - `Enabled: false` on a sheet entry leaves that sheet empty without running its query.
 
-Query parameters, bound as `$1..$5`. `radet.sql` uses the named placeholders; `hts.sql` (`?1..?3`) and
-`index.sql` (`?1` only - the HTS Index report always covers every record) are the report module's queries
-unchanged:
+Query parameters, bound as `$1..$5`. `radet.sql` uses the named placeholders; the other scripts use the report
+module's positional ones unchanged - bare in its native queries (`?1`), quoted in its `query.yml` queries
+(`'?2'`, which the module substitutes as text; bound, the quotes are dropped):
 
 | Named | Positional | Value |
 |---|---|---|
@@ -85,6 +96,14 @@ The Index sheet keeps the 18 headers of the earlier blob `index_report.sql` (`In
 the column the report module writes under the same header in its HTS_INDEX_REPORT (Relationship to Index,
 Notification Method and Date of HTS for the three with slightly different names). Age and Sex of the index
 client, Type of contact and HIV Test Status are not in that report and stay empty.
+
+PMTCT HTS and Maternal Cohort keep the headers of the earlier blob scripts too (`SheetLayouts`,
+`SheetProjection`); datimCode is the facility's DATIM id. PMTCT HTS takes the columns the report module's PMTCT
+HTS (Pepfar) export uses (Setting, Point of Entry, Syphilis Test Result, Previously Known HIV+ Result, Syphilis
+Treatment & Referral Result for the differently named ones); Gestational Age and Facility Enrolled In are not in
+it and stay empty. Maternal Cohort takes the same-named columns, plus the module's "Mother''s Status<TAB>Timing
+of ART initiation in mother", "Birth Outcome" and "Age at CTX (Cotrimoxazole)" columns for the three renamed
+headers. Prep and AHD headers are exactly the module's.
 
 As in the report module, any RADET status containing "stop" is reported as "Stopped Treatment".
 

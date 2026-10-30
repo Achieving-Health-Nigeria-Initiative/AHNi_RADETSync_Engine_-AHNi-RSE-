@@ -328,7 +328,10 @@ public class PostgresService(
         var named = NamedPlaceholder.Replace(
             sql,
             m => "$" + (Array.IndexOf(QueryParameters.PlaceholderNames, m.Groups[1].Value) + 1));
-        return Regex.Replace(named, @"\?(\d+)", "$$$1");
+        // query.yml queries quote their dates ('?2'), as the report module substitutes them as text; bound, the
+        // parameter is already a date, so the quotes go.
+        var unquoted = Regex.Replace(named, @"'\?(\d+)'", "$$$1");
+        return Regex.Replace(unquoted, @"\?(\d+)", "$$$1");
     }
 
     private static void ValidateSql(string sql)

@@ -15,10 +15,10 @@ namespace AHNiRSE.Application.Scripts;
 /// Sheet 1 – RADET          (radet_query_new.sql        – typed model, strongly mapped)
 /// Sheet 2 – HTS            (hts.sql                    – typed model, strongly mapped)
 /// Sheet 3 – Index          (index.sql                  – report module HTS Index (ICT), mapped to the sheet's 18 headers)
-/// Sheet 4 – PMTCT HTS      (pmtct_hts_report.sql       – raw DataTable)
-/// Sheet 5 – Maternal       (maternal_cohort_report.sql – raw DataTable)
-/// Sheet 6 – Prep           (prep_query.sql             – raw DataTable)
-/// Sheet 7 – AHD            (ahd_query_raw.sql          – raw DataTable)
+/// Sheet 4 – PMTCT HTS      (pmtct_hts.sql              – report module PMTCT HTS (Pepfar), mapped to the sheet's 16 headers)
+/// Sheet 5 – Maternal       (maternal.sql               – report module query.yml maternal cohort, mapped to 48 headers)
+/// Sheet 6 – Prep           (prep.sql                   – report module query.yml prep-query, headers as returned)
+/// Sheet 7 – AHD            (ahd.sql                    – report module query.yml ahd-query, headers as returned)
 ///
 /// Sheet 1 is FATAL: if the RADET SQL cannot be downloaded or run, nothing is uploaded.
 /// Sheets 2-7 are NON-FATAL: if a SQL download or query fails, or the sheet's
@@ -166,81 +166,12 @@ public class RadetReportScript(
             ["CaseManager"] = "Case Manager",
         };
 
-    // ── PMTCT HTS header map (16 columns — matches pmtct_hts_report.sql final SELECT) ──────────────────
+    // ── PMTCT HTS / Maternal Cohort headers (an empty sheet keeps them) ──────────
     private static readonly Dictionary<string, string> PmtctHtsHeaderMap =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["datimCode"]                                  = "datimCode",
-            ["patientId"]                                  = "Patient ID",
-            ["motherHospitalNum"]                          = "Mother's Hospital Num",
-            ["age"]                                        = "Age",
-            ["ancSetting"]                                 = "ANC Setting",
-            ["modality"]                                   = "Modality",
-            ["pointOfEntry"]                               = "Point of Entry",
-            ["dateOfRegistrationInIndexPregnancy"]         = "Date of registration in index pregnancy",
-            ["gestationalAgeWeeksAtFirstAncVisit"]         = "Gestational Age (Weeks) @ First ANC visit",
-            ["dateTestedForHiv"]                           = "Date Tested for HIV",
-            ["hivTestResult"]                              = "HIV Test Result",
-            ["syphillisTestResult"]                        = "Syphillis Test Result",
-            ["dateOfMaternalRetesting"]                    = "Date Of Maternal Retesting",
-            ["previouslyKnownHivPositiveStatus"]           = "Previously Known HIV +Ve Status",
-            ["facilityEnrolledIn"]                         = "Facility Enrolled In",
-            ["linkedToSyphilisTreatment"]                  = "Linked to Syphilis Treatment",
-        };
+        SheetLayouts.PmtctHtsHeaders.ToDictionary(h => h, h => h);
 
-    // ── Maternal Cohort header map (48 columns — matches maternal_cohort_report.sql final SELECT) ────
     private static readonly Dictionary<string, string> MaternalCohortHeaderMap =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["datimCode"]                                         = "datimCode",
-            ["patientId"]                                         = "Patient ID",
-            ["motherHospitalNumber"]                              = "Mother's Hospital Number",
-            ["age"]                                               = "Age",
-            ["ancSetting"]                                        = "ANC Setting",
-            ["pointOfEntry"]                                      = "Point of Entry",
-            ["dateOfInitialVisit"]                                = "Date of Initial Visit",
-            ["dateOfIndexAncRegistration"]                        = "Date of Index ANC Registration",
-            ["syphilisTestResult"]                                = "Syphilis Test Result",
-            ["treatedForSyphilis"]                                = "Treated for Syphilis",
-            ["tbScreeningStatus"]                                 = "TB screening Status",
-            ["motherArtStartDate"]                                = "Mother's ART Start Date",
-            ["timingOfArtInitiationInMother"]                     = "Timing of ART initiation in mother",
-            ["gaAtLastVisitWeeks"]                                = "GA at last visit (weeks)",
-            ["motherCurrentArtStatus"]                            = "Mother's Current ART Status",
-            ["dueDateForVlSampleCollectionAt32Weeks"]             = "Due Date for VL Sample collection @ 32 weeks",
-            ["dateForVlSampleCollectionAt32Weeks"]                = "Date for VL sample collection @ 32 weeks",
-            ["currentViralLoadResult"]                            = "Current Viral load Result",
-            ["dateOfCurrentVl"]                                   = "Date of Current VL",
-            ["dateOfDelivery"]                                    = "Date of Delivery",
-            ["placeOfDelivery"]                                   = "Place of Delivery",
-            ["modeOfDelivery"]                                    = "Mode of Delivery",
-            ["fetalOutcomeChildStatus"]                           = "Fetal outcome (Child status)",
-            ["childHospitalIdNumber"]                             = "Child's hospital ID number",
-            ["sexChild"]                                          = "Sex - Child",
-            ["birthWeight"]                                       = "Birth Weight",
-            ["dateOfArvProphylaxisCommencement"]                  = "Date of ARV Prophylaxis Commencemment",
-            ["typeOfProphylaxis"]                                 = "Type of Prophylaxis (ePNP or regular)",
-            ["dateOfCtxCotrimoxazole"]                            = "Date of CTX (Cotrimoxazole)",
-            ["currentInfantFeedingOptions"]                       = "Current infant feeding options",
-            ["dateOfFirstDnaPcrSampleCollection"]                 = "Date of First DNA PCR Sample collection",
-            ["resultOfFirstDnaPcrTest"]                           = "Result of first DNA PCR test",
-            ["dateFirstDnaPcrResultWasReceived"]                  = "Date first DNA PCR result was received",
-            ["dateOfSecondDnaPcrTestSampleCollection"]            = "Date of Second DNA PCR test sample collection",
-            ["resultOfSecondDnaPcrTest"]                          = "Result of second DNA PCR test",
-            ["dateSecondDnaPcrResultWasReceived"]                 = "Date second DNA PCR result was received",
-            ["dateOfThirdDnaPcrTestSampleCollection"]             = "Date of third DNA PCR test sample collection",
-            ["resultOfThirdDnaPcrTest"]                           = "Result of third DNA PCR test",
-            ["dateThirdDnaPcrResultWasReceived"]                  = "Date third DNA PCR result was received",
-            ["dateOfFourthDnaPcrTestSampleCollection"]            = "Date of fourth DNA PCR test sample collection",
-            ["resultOfFourthDnaPcrTest"]                          = "Result of fourth DNA PCR test",
-            ["dateFourthDnaPcrResultWasReceived"]                 = "Date fourth DNA PCR result was received",
-            ["dateOfConfirmatoryDnaPcrTestSampleCollection"]      = "Date of confirmatory DNA PCR test sample collection",
-            ["resultOfConfirmatoryDnaPcrTest"]                    = "Result of confirmatory DNA PCR test",
-            ["dateConfirmatoryDnaPcrResultWasReceived"]           = "Date confirmatory DNA PCR result was received",
-            ["dateOfChildFinalOutcomeTest"]                       = "Date of Child Final Outcome test",
-            ["resultChildFinalOutcome"]                           = "Result (Child Final Outcome)",
-            ["childArtStartDate"]                                 = "Child's ART Start Date",
-        };
+        SheetLayouts.MaternalCohortHeaders.ToDictionary(h => h, h => h);
 
     // -- Prep header map (91 columns -- matches prep_query.sql final SELECT) ------------------
     private static readonly Dictionary<string, string> PrepHeaderMap =
@@ -422,11 +353,25 @@ public class RadetReportScript(
         using var parallelCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         var htsTask = RunNonFatalHtsQueryAsync(facilityId, context.WatToday, parallelCts.Token);
-        var indexTask = RunNonFatalIndexQueryAsync(queryParameters, parallelCts.Token);
-        var pmtctTask = RunNonFatalDataTableQueryAsync("PMTCTHTS", "PMTCT HTS", queryParameters, parallelCts.Token);
-        var maternalTask = RunNonFatalDataTableQueryAsync("Maternal", "Maternal Cohort", queryParameters, parallelCts.Token);
-        var prepTask = RunNonFatalDataTableQueryAsync("Prep", "Prep", queryParameters, parallelCts.Token);
-        var ahdTask = RunNonFatalDataTableQueryAsync("AHD", "AHD", queryParameters, parallelCts.Token);
+        var indexTask = RunNonFatalShapedQueryAsync("Index", "Index", queryParameters, IndexMapper.Map, parallelCts.Token);
+
+        // Default start dates are the ones the earlier blob scripts used (the report module's own default is 1985).
+        var datim = new Dictionary<string, object?> { [SheetLayouts.DatimCode] = facility.DatimId };
+        var pmtctTask = RunNonFatalShapedQueryAsync(
+            "PMTCTHTS", "PMTCT HTS",
+            SheetParameters("PMTCTHTS", facilityId, context.WatToday, new DateOnly(1980, 1, 1)),
+            rows => SheetProjection.Project(rows, SheetLayouts.PmtctHtsHeaders, SheetLayouts.PmtctHtsSources, datim),
+            parallelCts.Token);
+        var maternalTask = RunNonFatalShapedQueryAsync(
+            "Maternal", "Maternal Cohort",
+            SheetParameters("Maternal", facilityId, context.WatToday, new DateOnly(1980, 1, 1)),
+            rows => SheetProjection.Project(rows, SheetLayouts.MaternalCohortHeaders, SheetLayouts.MaternalCohortSources, datim),
+            parallelCts.Token);
+        // Prep and AHD: the report module queries return exactly the sheets' headers.
+        var prepTask = RunNonFatalDataTableQueryAsync(
+            "Prep", "Prep", SheetParameters("Prep", facilityId, context.WatToday, new DateOnly(1985, 1, 1)), parallelCts.Token);
+        var ahdTask = RunNonFatalDataTableQueryAsync(
+            "AHD", "AHD", SheetParameters("AHD", facilityId, context.WatToday, new DateOnly(1985, 1, 1)), parallelCts.Token);
 
         List<Radet> radetRows;
         int radetCount;
@@ -545,30 +490,45 @@ public class RadetReportScript(
     }
 
     /// <summary>
-    /// Index sheet: the report module's HTS Index (family index / ICT) query - every record of the facility,
-    /// no date range - reshaped by <see cref="IndexMapper"/> to the sheet's 18 headers.
+    /// A sheet whose report module query has its own column names: runs it, then <paramref name="shape"/>
+    /// turns the rows into the sheet's headers.
     /// </summary>
-    private async Task<(DataTable? Data, int Count)> RunNonFatalIndexQueryAsync(
+    private async Task<(DataTable? Data, int Count)> RunNonFatalShapedQueryAsync(
+        string scriptName,
+        string sheetName,
         QueryParameters parameters,
+        Func<DataTable, DataTable> shape,
         CancellationToken ct)
     {
-        var (data, count) = await RunNonFatalDataTableQueryAsync("Index", "Index", parameters, ct);
+        var (data, count) = await RunNonFatalDataTableQueryAsync(scriptName, sheetName, parameters, ct);
         if (data is null)
             return (null, 0);
 
         try
         {
-            var mapped = IndexMapper.Map(data);
+            var mapped = shape(data);
             if (!ReferenceEquals(mapped, data))
                 data.Dispose();
             return (mapped, count);
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "[RADET] Index rows could not be mapped - sheet will be empty.");
+            logger.LogWarning(ex, "[RADET] {Sheet} rows could not be mapped - sheet will be empty.", sheetName);
             data.Dispose();
             return (null, 0);
         }
+    }
+
+    /// <summary>
+    /// Query parameters for a sheet: the facility, and the sheet entry's StartDate (or
+    /// <paramref name="defaultStart"/>) and EndDate (or today).
+    /// </summary>
+    private QueryParameters SheetParameters(string scriptName, long facilityId, DateOnly watToday, DateOnly defaultStart)
+    {
+        var (start, end) = ResolveDates(FindScript(scriptName), watToday, _ => defaultStart);
+        logger.LogInformation(
+            "[RADET] {Script} period {Start}->{End}", scriptName, start.ToString("yyyy-MM-dd"), end.ToString("yyyy-MM-dd"));
+        return new QueryParameters { FacilityId = facilityId, StartDate = start, EndDate = end };
     }
 
     private async Task<(DataTable? Data, int Count)> RunNonFatalDataTableQueryAsync(
