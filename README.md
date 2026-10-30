@@ -65,15 +65,19 @@ SQL scripts:
   cannot be loaded or run, that sheet keeps its headers with no rows and the workbook is still uploaded.
 - `Enabled: false` on a sheet entry leaves that sheet empty without running its query.
 
-Query parameters (named placeholders, bound as `$1..$5`; the report module's `?1..?5` also work):
+Query parameters, bound as `$1..$5`. `radet.sql` uses the named placeholders; `hts.sql` is the report
+module's query unchanged and uses its positional `?1..?3`:
 
-| Placeholder | Value |
-|---|---|
-| `:facility_id` | `FacilityId`, or 0 = `SELECT current_organisation_unit_id FROM base_application_user WHERE id = 1` |
-| `:start_date` | `StartDate`, or the script default: RADET 1980-01-01, HTS 1 July before the current fiscal year |
-| `:end_date` | `EndDate`, or today (WAT) |
-| `:previous_quarter_end` | end of the calendar quarter before `:end_date`'s quarter |
-| `:previous_previous_quarter_end` | end of the quarter before that |
+| Named | Positional | Value |
+|---|---|---|
+| `:facility_id` | `?1` | `FacilityId`, or 0 = `SELECT current_organisation_unit_id FROM base_application_user WHERE id = 1` |
+| `:start_date` | `?2` | `StartDate`, or the script default from the end date: RADET 1980-01-01; HTS 1 July before the fiscal year (1 Oct - 30 Sep) containing the end date (EndDate 2025-09-30 -> 2024-07-01) |
+| `:end_date` | `?3` | `EndDate`, or today (WAT) |
+| `:previous_quarter_end` | `?4` | end of the calendar quarter before the end date's quarter |
+| `:previous_previous_quarter_end` | `?5` | end of the quarter before that |
+
+The HTS sheet keeps the 29 columns it had with the earlier blob `hts.sql` (same headers and order); the
+report module's other HTS columns, including names and phone numbers, are read but not written.
 
 As in the report module, any RADET status containing "stop" is reported as "Stopped Treatment".
 

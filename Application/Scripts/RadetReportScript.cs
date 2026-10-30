@@ -386,7 +386,7 @@ public class RadetReportScript(
             .FirstOrDefault(s => string.Equals(s.Name, Name, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException($"No '{Name}' config in Reports:Scripts.");
 
-        var (startDate, endDate) = ResolveDates(cfg, context.WatToday, RadetDefaultStart);
+        var (startDate, endDate) = ResolveDates(cfg, context.WatToday, _ => RadetDefaultStart);
         var facilityId = cfg.FacilityId > 0 ? cfg.FacilityId : await database.GetFacilityIdAsync(ct);
         var queryParameters = new QueryParameters
         {
@@ -517,9 +517,7 @@ public class RadetReportScript(
         try
         {
             var htsCfg = FindScript("HTS");
-            var (startDate, endDate) = htsCfg is null
-                ? (HtsDefaultStart(watToday), watToday)
-                : ResolveDates(htsCfg, watToday, HtsDefaultStart(watToday));
+            var (startDate, endDate) = ResolveDates(htsCfg, watToday, HtsDefaultStart);
             var parameters = new QueryParameters { FacilityId = facilityId, StartDate = startDate, EndDate = endDate };
             logger.LogInformation(
                 "[RADET] HTS period {Start}->{End}", startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
@@ -622,16 +620,20 @@ public class RadetReportScript(
     }
 
     /// <summary>
-    /// Resolves :start_date and :end_date from a script entry: StartDate or <paramref name="defaultStart"/>,
-    /// and EndDate or today. Always receives watToday from CycleContext – never DateTime.UtcNow / Today.
+    /// Resolves the start and end dates from a script entry: EndDate or today, then StartDate or
+    /// <paramref name="defaultStart"/> applied to that end date. Always receives watToday from
+    /// CycleContext – never DateTime.UtcNow / Today.
     /// </summary>
-    private static (DateOnly start, DateOnly end) ResolveDates(ScriptConfig cfg, DateOnly watToday, DateOnly defaultStart)
+    private static (DateOnly start, DateOnly end) ResolveDates(
+        ScriptConfig? cfg,
+        DateOnly watToday,
+        Func<DateOnly, DateOnly> defaultStart)
     {
-        var start = string.IsNullOrWhiteSpace(cfg.StartDate)
-            ? defaultStart : DateOnly.Parse(cfg.StartDate);
-
-        var end = string.IsNullOrWhiteSpace(cfg.EndDate)
+        var end = string.IsNullOrWhiteSpace(cfg?.EndDate)
             ? watToday : DateOnly.Parse(cfg.EndDate);
+
+        var start = string.IsNullOrWhiteSpace(cfg?.StartDate)
+            ? defaultStart(end) : DateOnly.Parse(cfg.StartDate);
 
         if (start > end)
             throw new ArgumentException($"StartDate {start} > EndDate {end}");
@@ -640,12 +642,14 @@ public class RadetReportScript(
     }
 
     /// <summary>
-    /// HTS :start_date when Reports:Scripts HTS has no StartDate: three months before the start of the
-    /// current PEPFAR fiscal year (1 October), the window the previous blob hts.sql used.
+    /// HTS start date when Reports:Scripts HTS has no StartDate: 1 July before the PEPFAR fiscal year
+    /// (1 October - 30 September) that contains <paramref name="endDate"/>, i.e. the fiscal year plus the
+    /// three months before it - the window the previous blob hts.sql used, but taken from the end date so
+    /// a past period (EndDate 2025-09-30 -> 2024-07-01) gets that year's window.
     /// </summary>
-    private static DateOnly HtsDefaultStart(DateOnly watToday)
+    private static DateOnly HtsDefaultStart(DateOnly endDate)
     {
-        var fiscalYearStart = new DateOnly(watToday.Month >= 10 ? watToday.Year : watToday.Year - 1, 10, 1);
+        var fiscalYearStart = new DateOnly(endDate.Month >= 10 ? endDate.Year : endDate.Year - 1, 10, 1);
         return fiscalYearStart.AddMonths(-3);
     }
 
