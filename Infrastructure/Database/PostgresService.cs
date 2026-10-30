@@ -323,26 +323,12 @@ public class PostgresService(
         @"(?<![:\w]):(" + string.Join("|", QueryParameters.PlaceholderNames) + @")\b",
         RegexOptions.Compiled);
 
-    // The report module's query.yml queries are filled with String.format(sql, facilityId, start, end):
-    // %d is the facility and the first and second '%s' are the start and end dates.
-    private static readonly Regex FormatFacility = new(@"(?<!%)%d", RegexOptions.Compiled);
-    private static readonly Regex FormatDate = new(@"'%s'", RegexOptions.Compiled);
-
     private static string ConvertParameters(string sql)
     {
         var named = NamedPlaceholder.Replace(
             sql,
             m => "$" + (Array.IndexOf(QueryParameters.PlaceholderNames, m.Groups[1].Value) + 1));
-        var positional = Regex.Replace(named, @"\?(\d+)", "$$$1");
-
-        var formatted = FormatFacility.Replace(positional, "$$1");
-        var dateIndex = 0;
-        return FormatDate.Replace(formatted, _ => ++dateIndex switch
-        {
-            1 => "$2",
-            2 => "$3",
-            _ => throw new DatabaseException("SQL script has more than two '%s' date placeholders.")
-        });
+        return Regex.Replace(named, @"\?(\d+)", "$$$1");
     }
 
     private static void ValidateSql(string sql)

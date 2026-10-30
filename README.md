@@ -57,8 +57,8 @@ SQL scripts:
 
 - A script entry with a `LocalPath` is read from `Reports:LocalScriptFolder` (relative paths resolve against
   the app's content root). RADET, HTS and Index currently do this: they are the LAMISPlus report module 2.7.3
-  queries (`ReportRepository.getRadetData` / `getHtsReport`, and `query.yml` `index-query` for the index
-  elicitation report) kept in `RADETSyncEngine\report-script\`.
+  queries (`ReportRepository.getRadetData` / `getHtsReport` / `getFamilyIndexReport`) kept in
+  `RADETSyncEngine\report-script\`.
 - Every other script is downloaded from the `Storage:Azure:ScriptContainerName` blob container at the start
   of each cycle, so updating a blob updates every facility on its next run.
 - `BlobPath` may include a folder; if that path is missing, the file name at the container root is tried.
@@ -66,25 +66,25 @@ SQL scripts:
   cannot be loaded or run, that sheet keeps its headers with no rows and the workbook is still uploaded.
 - `Enabled: false` on a sheet entry leaves that sheet empty without running its query.
 
-Query parameters, bound as `$1..$5`. `radet.sql` uses the named placeholders; `hts.sql` is the report
-module's query unchanged with its positional `?1..?3`; `index.sql` is the module's `query.yml` query unchanged
-with its `String.format` placeholders:
+Query parameters, bound as `$1..$5`. `radet.sql` uses the named placeholders; `hts.sql` (`?1..?3`) and
+`index.sql` (`?1` only - the HTS Index report always covers every record) are the report module's queries
+unchanged:
 
-| Named | Positional | query.yml | Value |
-|---|---|---|---|
-| `:facility_id` | `?1` | `%d` | `FacilityId`, or 0 = `SELECT current_organisation_unit_id FROM base_application_user WHERE id = 1` |
-| `:start_date` | `?2` | 1st `'%s'` | `StartDate`, or the script default from the end date: RADET and Index 1980-01-01; HTS 1 July before the fiscal year (1 Oct - 30 Sep) containing the end date (EndDate 2025-09-30 -> 2024-07-01) |
-| `:end_date` | `?3` | 2nd `'%s'` | `EndDate`, or today (WAT) |
-| `:previous_quarter_end` | `?4` | | end of the calendar quarter before the end date's quarter |
-| `:previous_previous_quarter_end` | `?5` | | end of the quarter before that |
+| Named | Positional | Value |
+|---|---|---|
+| `:facility_id` | `?1` | `FacilityId`, or 0 = `SELECT current_organisation_unit_id FROM base_application_user WHERE id = 1` |
+| `:start_date` | `?2` | `StartDate`, or the script default from the end date: RADET 1980-01-01; HTS 1 July before the fiscal year (1 Oct - 30 Sep) containing the end date (EndDate 2025-09-30 -> 2024-07-01) |
+| `:end_date` | `?3` | `EndDate`, or today (WAT) |
+| `:previous_quarter_end` | `?4` | end of the calendar quarter before the end date's quarter |
+| `:previous_previous_quarter_end` | `?5` | end of the quarter before that |
 
 The HTS sheet keeps the 29 columns it had with the earlier blob `hts.sql` (same headers and order); the
 report module's other HTS columns, including names and phone numbers, are read but not written.
 
-The Index sheet keeps the 18 headers of the earlier blob `index_report.sql` (`IndexMapper`). The module's
-index elicitation query fills datimCode, index client code, Accepted Index Testing (codeset ids shown as
-their display text), contact's age (from date of birth, at the end date) and sex, relationship, counselling /
-notification method and date of HTS (dd-mm-yyyy); the other headers have no source in it and stay empty.
+The Index sheet keeps the 18 headers of the earlier blob `index_report.sql` (`IndexMapper`), each filled from
+the column the report module writes under the same header in its HTS_INDEX_REPORT (Relationship to Index,
+Notification Method and Date of HTS for the three with slightly different names). Age and Sex of the index
+client, Type of contact and HIV Test Status are not in that report and stay empty.
 
 As in the report module, any RADET status containing "stop" is reported as "Stopped Treatment".
 

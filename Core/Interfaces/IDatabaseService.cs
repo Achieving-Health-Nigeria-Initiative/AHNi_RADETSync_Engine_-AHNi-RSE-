@@ -10,9 +10,8 @@ namespace AHNiRSE.Core.Interfaces;
 ///   - ExecuteScriptAsync(sql, parameters) → parameterised query, safe against SQL injection
 ///
 /// Parameterised scripts use the named placeholders listed on <see cref="QueryParameters"/>
-/// (:facility_id, :start_date, ...), the LAMISPlus report module's positional ?1..?5, or its query.yml
-/// String.format style (%d = facility, first '%s' = start date, second '%s' = end date).
-/// PostgresService converts all of them to Npgsql-style $1..$5 before execution.
+/// (:facility_id, :start_date, ...) or the LAMISPlus report module's positional ?1..?5.
+/// PostgresService converts both to Npgsql-style $1..$5 before execution.
 /// </summary>
 public interface IDatabaseService
 {

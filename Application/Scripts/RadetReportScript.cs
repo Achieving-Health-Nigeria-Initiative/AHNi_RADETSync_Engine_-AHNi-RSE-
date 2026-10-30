@@ -14,7 +14,7 @@ namespace AHNiRSE.Application.Scripts;
 ///
 /// Sheet 1 – RADET          (radet_query_new.sql        – typed model, strongly mapped)
 /// Sheet 2 – HTS            (hts.sql                    – typed model, strongly mapped)
-/// Sheet 3 – Index          (index.sql                  – report module index elicitation, mapped to the sheet's 18 headers)
+/// Sheet 3 – Index          (index.sql                  – report module HTS Index (ICT), mapped to the sheet's 18 headers)
 /// Sheet 4 – PMTCT HTS      (pmtct_hts_report.sql       – raw DataTable)
 /// Sheet 5 – Maternal       (maternal_cohort_report.sql – raw DataTable)
 /// Sheet 6 – Prep           (prep_query.sql             – raw DataTable)
@@ -422,10 +422,7 @@ public class RadetReportScript(
         using var parallelCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
         var htsTask = RunNonFatalHtsQueryAsync(facilityId, context.WatToday, parallelCts.Token);
-        var (indexStart, indexEnd) = ResolveDates(FindScript("Index"), context.WatToday, _ => RadetDefaultStart);
-        var indexTask = RunNonFatalIndexQueryAsync(
-            new QueryParameters { FacilityId = facilityId, StartDate = indexStart, EndDate = indexEnd },
-            parallelCts.Token);
+        var indexTask = RunNonFatalIndexQueryAsync(queryParameters, parallelCts.Token);
         var pmtctTask = RunNonFatalDataTableQueryAsync("PMTCTHTS", "PMTCT HTS", queryParameters, parallelCts.Token);
         var maternalTask = RunNonFatalDataTableQueryAsync("Maternal", "Maternal Cohort", queryParameters, parallelCts.Token);
         var prepTask = RunNonFatalDataTableQueryAsync("Prep", "Prep", queryParameters, parallelCts.Token);
@@ -548,34 +545,23 @@ public class RadetReportScript(
     }
 
     /// <summary>
-    /// Index sheet: the report module's index elicitation query, reshaped by <see cref="IndexMapper"/> to the
-    /// sheet's 18 headers, with "Accepted INS" codeset ids resolved to their display text.
+    /// Index sheet: the report module's HTS Index (family index / ICT) query - every record of the facility,
+    /// no date range - reshaped by <see cref="IndexMapper"/> to the sheet's 18 headers.
     /// </summary>
     private async Task<(DataTable? Data, int Count)> RunNonFatalIndexQueryAsync(
         QueryParameters parameters,
         CancellationToken ct)
     {
-        logger.LogInformation(
-            "[RADET] Index period {Start}->{End}",
-            parameters.StartDate.ToString("yyyy-MM-dd"),
-            parameters.EndDate.ToString("yyyy-MM-dd"));
-
         var (data, count) = await RunNonFatalDataTableQueryAsync("Index", "Index", parameters, ct);
         if (data is null)
             return (null, 0);
 
         try
         {
-            var codesets = await LoadCodesetDisplaysAsync(IndexMapper.CodesetIds(data), ct);
-            var mapped = IndexMapper.Map(data, codesets, parameters.EndDate);
+            var mapped = IndexMapper.Map(data);
             if (!ReferenceEquals(mapped, data))
                 data.Dispose();
             return (mapped, count);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            data.Dispose();
-            throw;
         }
         catch (Exception ex)
         {
@@ -583,21 +569,6 @@ public class RadetReportScript(
             data.Dispose();
             return (null, 0);
         }
-    }
-
-    /// <summary>base_application_codeset display text for the given ids.</summary>
-    private async Task<IReadOnlyDictionary<long, string>> LoadCodesetDisplaysAsync(
-        IEnumerable<long> ids,
-        CancellationToken ct)
-    {
-        var list = ids.ToList();
-        if (list.Count == 0)
-            return new Dictionary<long, string>();
-
-        // ids are parsed longs, so inlining them is safe
-        using var table = await database.ExecuteScriptAsync(
-            $"SELECT id, display FROM base_application_codeset WHERE id IN ({string.Join(",", list)})", ct);
-        return table.Rows.Cast<DataRow>().ToDictionary(r => Convert.ToInt64(r[0]), r => Convert.ToString(r[1]) ?? string.Empty);
     }
 
     private async Task<(DataTable? Data, int Count)> RunNonFatalDataTableQueryAsync(

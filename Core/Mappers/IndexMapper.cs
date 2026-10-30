@@ -4,9 +4,11 @@ using System.Globalization;
 namespace AHNiRSE.Application.Mappers;
 
 /// <summary>
-/// Shapes the Index sheet. The report module's index elicitation query (report-script/index.sql, query.yml
-/// index-query) has its own column names; the sheet keeps the 18 headers the earlier blob index_report.sql
-/// produced, in that order. Headers the module's query has no source for are left empty.
+/// Shapes the Index sheet. The report module's HTS Index (family index / ICT) query
+/// (report-script/index.sql, ReportRepository.getFamilyIndexReport) has its own column names; the sheet keeps
+/// the 18 headers the earlier blob index_report.sql produced, in that order. Each header takes the column the
+/// report module writes under the same header in its HTS_INDEX_REPORT; headers that report does not have are
+/// left empty.
 /// </summary>
 public static class IndexMapper
 {
@@ -33,84 +35,55 @@ public static class IndexMapper
         "Date linked to Treatment & Care",
     ];
 
-    /// <summary>The module query's "Accepted INS" column: a codeset id or Yes/No text.</summary>
-    public const string AcceptedInsColumn = "Accepted INS";
+    private static readonly HashSet<string> IntHeaders = ["Age", "Index Contact's Age"];
+    private static readonly HashSet<string> DateHeaders =
+        ["Date offered index testing", "Date of Elicitation", "Date linked to Treatment & Care"];
 
     /// <summary>
-    /// Builds the Index sheet table from the module query's rows. <paramref name="codesets"/> resolves
-    /// numeric "Accepted INS" values (base_application_codeset id -> display); <paramref name="asOf"/> is the
-    /// date contacts' ages are worked out at. A table that already has the sheet headers (the blob script)
-    /// is returned unchanged.
+    /// Builds the Index sheet table from the module query's rows. A table that already has the sheet
+    /// headers (the blob script) is returned unchanged.
     /// </summary>
-    public static DataTable Map(DataTable source, IReadOnlyDictionary<long, string> codesets, DateOnly asOf)
+    public static DataTable Map(DataTable source)
     {
         if (source.Columns.Contains(Headers[0]))
             return source;
 
         var table = new DataTable();
         foreach (var header in Headers)
-            table.Columns.Add(header, header is "Age" or "Index Contact's Age" ? typeof(int) : typeof(string));
+        {
+            var type = IntHeaders.Contains(header) ? typeof(int)
+                : DateHeaders.Contains(header) ? typeof(DateTime)
+                : typeof(string);
+            table.Columns.Add(header, type);
+        }
 
         foreach (DataRow row in source.Rows)
         {
-            var dob = Get(row, "Date of Birth") as DateTime?;
-            var tested = Get(row, "Date Partner Came For Testing") as DateTime?;
+            var tested = Get(row, "datetestedhiv") as DateTime?;
 
+            // Sources follow the report module's fillFamilyIndexMapper / FAMILY_INDEX_HEADER.
             table.Rows.Add(
-                Get(row, "Facility Id (Datim)"),
-                Get(row, "Client Code"),
-                DBNull.Value,                                  // index client's age: not in the module query
-                DBNull.Value,                                  // index client's sex: not in the module query
-                DBNull.Value,                                  // entry point: not in the module query
-                DBNull.Value,                                  // date offered: not in the module query
-                AcceptedIns(Get(row, AcceptedInsColumn) as string, codesets),
-                DBNull.Value,                                  // date of elicitation: not in the module query
-                DBNull.Value,                                  // contact ID: not in the module query
-                dob is null ? DBNull.Value : AgeAt(DateOnly.FromDateTime(dob.Value), asOf),
-                Get(row, "Sex"),                               // the contact's sex (hts_index_elicitation.sex)
-                Get(row, "Relationship with index client"),
-                DBNull.Value,                                  // type of contact: not in the module query
-                Get(row, "Notification Method"),
-                DBNull.Value,                                  // contact's HIV test status: not in the module query
-                DBNull.Value,                                  // contact's HIV test result: not in the module query
-                tested?.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture) ?? (object)DBNull.Value,
-                DBNull.Value);                                 // date linked: never filled
+                Get(row, "datimid"),             // Facility Id (Datim)
+                Get(row, "clientcode"),          // Index client code/unique ID
+                null,                            // index client's age: not in the HTS Index report
+                null,                            // index client's sex: not in the HTS Index report
+                Get(row, "entrypoint"),          // Index client entry point
+                Get(row, "dateofservice"),       // Date offered index testing
+                Get(row, "acceptedpns"),         // Accepted Index Testing
+                Get(row, "dateofservice"),       // Date of Elicitation
+                Get(row, "contactcode"),         // Index Contact ID
+                Get(row, "age"),                 // Index Contact's Age
+                Get(row, "sex"),                 // Index Contact's Sex
+                Get(row, "relationshiptoindex"), // Relationship to Index
+                null,                            // type of contact: not in the HTS Index report
+                Get(row, "notificationmethod"),  // Notification Method
+                null,                            // HIV test status: not in the HTS Index report
+                Get(row, "hivtestresult"),       // HIV Test Result
+                tested?.ToString("dd-MM-yyyy", CultureInfo.InvariantCulture), // Date of HTS (dd-mm-yyyy)
+                Get(row, "dateenrolledart"));    // Date linked to Treatment & Care
         }
 
         return table;
-    }
-
-    /// <summary>Numeric "Accepted INS" values that need a codeset lookup.</summary>
-    public static IEnumerable<long> CodesetIds(DataTable source) =>
-        source.Columns.Contains(AcceptedInsColumn)
-            ? source.Rows.Cast<DataRow>()
-                .Select(r => Get(r, AcceptedInsColumn) as string)
-                .Where(v => long.TryParse(v, out _))
-                .Select(long.Parse!)
-                .Distinct()
-            : [];
-
-    /// <summary>Yes/No text as Yes/No, a codeset id as its display, anything else as stored.</summary>
-    private static object AcceptedIns(string? value, IReadOnlyDictionary<long, string> codesets)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return DBNull.Value;
-
-        switch (value.Trim().ToLowerInvariant())
-        {
-            case "true" or "yes" or "1":
-                return "Yes";
-            case "false" or "no" or "0":
-                return "No";
-        }
-
-        return long.TryParse(value, out var id) && codesets.TryGetValue(id, out var display) ? display : value;
-    }
-
-    private static int AgeAt(DateOnly dob, DateOnly asOf)
-    {
-        var age = asOf.Year - dob.Year;
-        return dob.AddYears(age) > asOf ? age - 1 : age;
     }
 
     private static object? Get(DataRow row, string column) =>
