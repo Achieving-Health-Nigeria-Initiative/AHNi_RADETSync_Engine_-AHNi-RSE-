@@ -18,7 +18,7 @@ public class ScriptManager(
 {
     private readonly ReportSettings _settings = options.Value;
 
-    public async Task<(int TotalRows, string UploadUrl)> RunEnabledAsync(
+    public async Task<(int TotalRows, string UploadUrl, DateTimeOffset? UploadedAt)> RunEnabledAsync(
         CycleContext context,
         CancellationToken ct = default)
     {
@@ -29,7 +29,7 @@ public class ScriptManager(
         if (enabledConfigs.Count == 0)
         {
             logger.LogWarning("[ScriptManager] No enabled scripts. Check Reports:Scripts in appsettings.json.");
-            return (0, string.Empty);
+            return (0, string.Empty, null);
         }
 
         var toRun = scripts.Where(s => enabledConfigs.ContainsKey(s.Name)).ToList();
@@ -46,7 +46,7 @@ public class ScriptManager(
         if (toRun.Count == 0)
         {
             logger.LogWarning("[ScriptManager] No runnable scripts found.");
-            return (0, string.Empty);
+            return (0, string.Empty, null);
         }
 
         var maxParallelScripts = Math.Clamp(_settings.MaxParallelScripts, 1, toRun.Count);
@@ -73,9 +73,8 @@ public class ScriptManager(
         var ordered = results.OrderBy(r => r.Order).ToList();
 
         var totalRows = ordered.Sum(r => r.RowCount);
-        var lastUrl = ordered
-            .Select(r => r.UploadUrl)
-            .LastOrDefault(url => !string.IsNullOrWhiteSpace(url)) ?? string.Empty;
+        var lastUpload = ordered.LastOrDefault(r => r.UploadedAt is not null);
+        var lastUrl = lastUpload.UploadUrl ?? string.Empty;
         var succeeded = ordered.Count(r => r.Status == ScriptRunStatus.Succeeded);
         var failed = ordered.Count(r => r.Status == ScriptRunStatus.Failed);
         var timedOut = ordered.Count(r => r.Status == ScriptRunStatus.TimedOut);
@@ -92,7 +91,7 @@ public class ScriptManager(
 
         MemoryPressureHelper.ReleaseAfterCycle(logger);
 
-        return (totalRows, lastUrl);
+        return (totalRows, lastUrl, lastUpload.UploadedAt);
     }
 
     private async Task<ScriptRunResult> RunScriptWithGateAsync(
@@ -132,14 +131,14 @@ public class ScriptManager(
                 "[ScriptManager] -> {Script} | RunDate={RunDate} | Timeout={Timeout}s",
                 script.Name, context.RunDate.ToString("yyyy-MM-dd"), timeout);
 
-            var (rows, url) = await script.RunAsync(context, cts.Token);
+            var (rows, url, uploadedAt) = await script.RunAsync(context, cts.Token);
             sw.Stop();
 
             logger.LogInformation(
                 "[ScriptManager] OK {Script} | {Rows} rows | {Url} | {Ms}ms",
                 script.Name, rows, url, sw.ElapsedMilliseconds);
 
-            return new ScriptRunResult(order, rows, url, ScriptRunStatus.Succeeded);
+            return new ScriptRunResult(order, rows, url, uploadedAt, ScriptRunStatus.Succeeded);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -147,7 +146,7 @@ public class ScriptManager(
             logger.LogError(
                 "[ScriptManager] TIMEOUT {Script} after {Timeout}s ({Ms}ms elapsed)",
                 script.Name, timeout, sw.ElapsedMilliseconds);
-            return new ScriptRunResult(order, 0, string.Empty, ScriptRunStatus.TimedOut);
+            return new ScriptRunResult(order, 0, string.Empty, null, ScriptRunStatus.TimedOut);
         }
         catch (Exception ex)
         {
@@ -155,7 +154,7 @@ public class ScriptManager(
             logger.LogError(ex,
                 "[ScriptManager] FAIL {Script} ({Ms}ms): {Msg}",
                 script.Name, sw.ElapsedMilliseconds, ex.Message);
-            return new ScriptRunResult(order, 0, string.Empty, ScriptRunStatus.Failed);
+            return new ScriptRunResult(order, 0, string.Empty, null, ScriptRunStatus.Failed);
         }
     }
 
@@ -170,6 +169,7 @@ public class ScriptManager(
         int Order,
         int RowCount,
         string UploadUrl,
+        DateTimeOffset? UploadedAt,
         ScriptRunStatus Status);
 }
 

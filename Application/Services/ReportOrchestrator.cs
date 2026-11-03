@@ -111,16 +111,42 @@ public class ReportOrchestrator(
                 "[Orchestrator] Facility: {Name} ({DatimId}) [{State}]",
                 facility.FacilityName, facility.DatimId, facility.State);
 
-            var (rows, url) = await scriptManager.RunEnabledAsync(context, cts.Token);
+            var (rows, url, uploadedAt) = await scriptManager.RunEnabledAsync(context, cts.Token);
             sw.Stop();
 
-            heartbeat.SetReportSuccess(
+            if (uploadedAt is null)
+            {
+                // Nothing reached blob storage, so Last RADET keeps the previous upload's time.
+                const string msg = "No report was uploaded - see the script errors in the log";
+                logger.LogError("[Orchestrator] {Msg} (CycleId={Id})", msg, cycleId);
+                heartbeat.SetReportError(msg);
+                await SafeRecordAuditAsync(new ReportCycleAuditEntry(
+                    CycleId: cycleId,
+                    Trigger: triggeredBy,
+                    RunDateWat: watToday,
+                    CycleStartWat: cycleStartWat,
+                    SlotLabel: slotLabel,
+                    FacilityName: facility.FacilityName,
+                    DatimId: facility.DatimId,
+                    State: facility.State,
+                    AuthPassed: true,
+                    Success: false,
+                    TotalRows: rows,
+                    UploadUrl: string.Empty,
+                    Error: msg,
+                    DurationMs: sw.ElapsedMilliseconds), ct);
+                return (rows, string.Empty);
+            }
+
+            // Written to the heartbeat table now, with Azure's upload time, rather than on the next ping.
+            await heartbeat.RecordReportUploadAsync(
                 facility.FacilityName,
                 facility.DatimId,
                 facility.State,
-                DateTimeOffset.UtcNow,
+                uploadedAt.Value,
                 rows,
-                url);
+                url,
+                ct);
 
             logger.LogInformation(
                 "[Orchestrator] COMPLETE | CycleId={CycleId} | RunDate={RunDate} | {Rows} rows | {Url} | {Ms}ms",

@@ -313,7 +313,7 @@ public class RadetReportScript(
 
     // ── Main entry point ──────────────────────────────────────────────────────
 
-    public async Task<(int RowCount, string UploadUrl)> RunAsync(
+    public async Task<(int RowCount, string UploadUrl, DateTimeOffset? UploadedAt)> RunAsync(
         CycleContext context,
         CancellationToken ct = default)
     {
@@ -425,7 +425,7 @@ public class RadetReportScript(
         {
             await exporter.ExportMultiSheetAsync(sheets, localOutput, ct);
             var blobDest = $"RADET/{folderDate}/{fileName}";
-            var storagePath = await storage.UploadAsync(localOutput, blobDest, ct);
+            var (storagePath, uploadedAt) = await storage.UploadAsync(localOutput, blobDest, ct);
             TryDeleteTempFile(localOutput);
 
             logger.LogInformation(
@@ -440,7 +440,7 @@ public class RadetReportScript(
                 ahdResult.Count,
                 blobDest);
 
-            return (radetCount, storagePath);
+            return (radetCount, storagePath, uploadedAt);
         }
         finally
         {

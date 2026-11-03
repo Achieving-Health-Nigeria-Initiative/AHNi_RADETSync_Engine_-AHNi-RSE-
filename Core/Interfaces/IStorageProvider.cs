@@ -9,6 +9,10 @@ public interface IStorageProvider
     /// <summary>Downloads a file from storage and returns its local temp path.</summary>
     Task<string> DownloadAsync(string sourcePath, CancellationToken ct = default);
 
-    /// <summary>Uploads a local file to storage. Returns the final storage path.</summary>
-    Task<string> UploadAsync(string localFilePath, string destinationPath, CancellationToken ct = default);
+    /// <summary>
+    /// Uploads a local file to storage. Returns the final storage path and the time the upload
+    /// completed by the storage service's clock (not the facility PC's).
+    /// </summary>
+    Task<(string Url, DateTimeOffset UploadedAt)> UploadAsync(
+        string localFilePath, string destinationPath, CancellationToken ct = default);
 }

@@ -4,14 +4,18 @@ public interface IHeartbeatService
 {
     Task PingAsync(CancellationToken ct = default);
 
-    // state parameter added — matches what GetFacilityInfo() now returns
-    void SetReportSuccess(
+    /// <summary>
+    /// Records a successful report upload: writes LastReportRun (the storage service's upload
+    /// time), LastReportRows and LastReportUrl to the heartbeat table straight away. Never throws.
+    /// </summary>
+    Task RecordReportUploadAsync(
         string facilityName,
         string datimId,
         string state,
-        DateTimeOffset ranAt,
+        DateTimeOffset uploadedAt,
         int rowCount,
-        string uploadUrl);
+        string uploadUrl,
+        CancellationToken ct = default);
 
     void SetReportError(string errorMessage);
 }

@@ -130,7 +130,7 @@ public class AzureStorageProvider(
             $"failed after {maxAttempts} attempt(s).");
     }
 
-    public async Task<string> UploadAsync(
+    public async Task<(string Url, DateTimeOffset UploadedAt)> UploadAsync(
         string localFilePath,
         string destinationPath,
         CancellationToken ct = default)
@@ -169,10 +169,12 @@ public class AzureStorageProvider(
 
                 await container.CreateIfNotExistsAsync(cancellationToken: attemptCts.Token);
                 await using var fs = File.OpenRead(localFilePath);
-                await blob.UploadAsync(fs, overwrite: true, cancellationToken: attemptCts.Token);
+                var uploaded = await blob.UploadAsync(fs, overwrite: true, cancellationToken: attemptCts.Token);
 
-                logger.LogInformation("[AzureStorage] Upload complete -> {Uri}", blob.Uri);
-                return blob.Uri.ToString();
+                // LastModified is stamped by Azure, so it is right even when the PC clock is not.
+                var uploadedAt = uploaded.Value.LastModified;
+                logger.LogInformation("[AzureStorage] Upload complete at {UploadedAt:o} -> {Uri}", uploadedAt, blob.Uri);
+                return (blob.Uri.ToString(), uploadedAt);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested && attempt < maxAttempts)
             {

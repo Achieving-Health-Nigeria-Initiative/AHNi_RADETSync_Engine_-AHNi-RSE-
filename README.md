@@ -24,6 +24,11 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 - Heartbeat loop always runs at `Heartbeat:IntervalMinutes`
 - Report loop runs by cron (`Reports:CronSchedule` / `Reports:CronSchedules`)
 - Heartbeat does not wait for report completion
+- Both write the facility's `FacilityHeartbeat` row (`<DatimId>`/`latest`) with Merge:
+  - the heartbeat writes liveness (`LastSeen`, `Status`, `LastReportError`, identity)
+  - a successful RADET upload immediately writes `LastReportRun` (Azure's upload time, ISO string),
+    `LastReportRows` and `LastReportUrl`. A cycle that uploads nothing sets `Status` to `error`
+    and leaves the previous upload's values in place. A restart never blanks them.
 
 ### 3) Cycle safety
 

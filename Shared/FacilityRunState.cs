@@ -15,6 +15,7 @@ public sealed class FacilityRunState
     private string _lastUploadUrl = string.Empty;
     private int _lastRowCount;
     private DateTimeOffset? _lastReportRun;
+    private bool _reportUnsent;
     private bool _hasError;
 
     // ── Writers (called by report loop and startup) ───────────────────────────
@@ -38,14 +39,14 @@ public sealed class FacilityRunState
     }
 
     /// <summary>
-    /// Called by ReportOrchestrator after a successful report cycle.
-    /// Updates all identity and report metadata in a single atomic write.
+    /// Called when a report upload succeeds. Updates all identity and report metadata in a
+    /// single atomic write and marks the report fields as not yet written to the table.
     /// </summary>
-    public void ReportSucceeded(
+    public void ReportUploaded(
         string facilityName,
         string datimId,
         string state,
-        DateTimeOffset ranAt,
+        DateTimeOffset uploadedAt,
         int rowCount,
         string uploadUrl)
     {
@@ -54,11 +55,25 @@ public sealed class FacilityRunState
             _facilityName = facilityName;
             _datimId = datimId;
             _state = state;
-            _lastReportRun = ranAt;
+            _lastReportRun = uploadedAt;
             _lastRowCount = rowCount;
             _lastUploadUrl = uploadUrl;
             _lastError = string.Empty;
             _hasError = false;
+            _reportUnsent = true;
+        }
+    }
+
+    /// <summary>
+    /// Called once the report fields for the upload at <paramref name="uploadedAt"/> are in the table.
+    /// A newer upload recorded in the meantime stays unsent.
+    /// </summary>
+    public void ReportWritten(DateTimeOffset uploadedAt)
+    {
+        lock (_lock)
+        {
+            if (_lastReportRun == uploadedAt)
+                _reportUnsent = false;
         }
     }
 
@@ -78,7 +93,7 @@ public sealed class FacilityRunState
     // ── Readers (called by heartbeat loop) ────────────────────────────────────
 
     /// <summary>
-    /// True once SetFacilityIdentity or ReportSucceeded has been called with
+    /// True once SetFacilityIdentity or ReportUploaded has been called with
     /// a non-empty DatimId. The heartbeat loop skips pinging until this is true.
     /// </summary>
     public bool HasIdentity
@@ -101,7 +116,8 @@ public sealed class FacilityRunState
                 LastRowCount: _lastRowCount,
                 LastUploadUrl: _lastUploadUrl,
                 LastError: _lastError,
-                HasError: _hasError
+                HasError: _hasError,
+                ReportUnsent: _reportUnsent
             );
         }
     }
@@ -118,5 +134,6 @@ public sealed record FacilityStateSnapshot(
     int LastRowCount,
     string LastUploadUrl,
     string LastError,
-    bool HasError
+    bool HasError,
+    bool ReportUnsent
 );

@@ -15,13 +15,20 @@ namespace AHNiRSE.Infrastructure.Heartbeat;
 ///   • MaxRetryAttempts configurable — set to 10 in appsettings.json.
 ///   • Per-attempt timeout (WriteTimeoutSeconds) — never hangs indefinitely.
 ///   • Exponential back-off with jitter — avoids thundering herd across facilities.
-///   • SetReportSuccess / SetReportError are fire-and-forget (no exceptions escape).
+///   • RecordReportUploadAsync / SetReportError are fire-and-forget (no exceptions escape).
 ///   • PingAsync never throws — Worker loop catches at the boundary but this adds
 ///     a second safety layer so a transient Azure Table outage cannot crash the loop.
 ///
 /// TABLE LAYOUT:
 ///   PartitionKey = DatimId  (one row per facility, permanent)
-///   RowKey       = "latest" (always overwrite — O(1) read from BayCentral)
+///   RowKey       = "latest" (merged in place — O(1) read from BayCentral)
+///
+/// WRITERS (both merge, so neither blanks the other's fields):
+///   • PingAsync, every IntervalMinutes — facility identity, MachineName, AppVersion, Status,
+///     LastSeen, OfflineThresholdMinutes, LastReportError.
+///   • RecordReportUploadAsync, right after a report upload — the same fields plus LastReportRun
+///     (Azure's upload time), LastReportRows and LastReportUrl. The ping only resends these when
+///     that write failed, so a restart (empty in-memory state) never wipes Last RADET.
 ///
 /// BayCentral OFFLINE DETECTION:
 ///   BayCentral reads OfflineThresholdMinutes from the row.
@@ -83,21 +90,10 @@ public sealed class AzureHeartbeatService : IHeartbeatService
             return;
         }
 
-        var entity = new TableEntity(snapshot.DatimId, "latest")
-        {
-            ["FacilityName"] = snapshot.FacilityName,
-            ["DatimId"] = snapshot.DatimId,
-            ["State"] = snapshot.State,
-            ["MachineName"] = _machineName,
-            ["AppVersion"] = _appVersion,
-            ["Status"] = snapshot.HasError ? "error" : "online",
-            ["LastSeen"] = DateTimeOffset.UtcNow,
-            ["OfflineThresholdMinutes"] = _cfg.OfflineThresholdMinutes,
-            ["LastReportRun"] = snapshot.LastReportRun?.ToString("o") ?? string.Empty,
-            ["LastReportRows"] = snapshot.LastRowCount,
-            ["LastReportUrl"] = snapshot.LastUploadUrl,
-            ["LastReportError"] = snapshot.LastError,
-        };
+        var entity = StatusEntity(snapshot);
+        var resendReport = snapshot.ReportUnsent && snapshot.LastReportRun is not null;
+        if (resendReport)
+            AddReportFields(entity, snapshot);
 
         var maxAttempts = Math.Max(1, _cfg.MaxRetryAttempts);
 
@@ -108,11 +104,14 @@ public sealed class AzureHeartbeatService : IHeartbeatService
 
             try
             {
-                await _table.UpsertEntityAsync(entity, TableUpdateMode.Replace, writeCts.Token);
+                await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, writeCts.Token);
+
+                if (resendReport)
+                    _state.ReportWritten(snapshot.LastReportRun!.Value);
 
                 _logger.LogInformation(
-                    "[Heartbeat] ✓ Ping sent — facility={Facility} status={Status}",
-                    snapshot.FacilityName, entity["Status"]);
+                    "[Heartbeat] ✓ Ping sent — facility={Facility} status={Status}{Resent}",
+                    snapshot.FacilityName, entity["Status"], resendReport ? " (with last report upload)" : "");
 
                 return; // success — reset is implicit (cooldown only set on total failure)
             }
@@ -211,14 +210,87 @@ public sealed class AzureHeartbeatService : IHeartbeatService
     private static bool IsTransient(int status) =>
         status is 429 or 500 or 502 or 503 or 504;
 
-    // ── SetReportSuccess / SetReportError / EnsureTableExistsAsync unchanged ──
-    public void SetReportSuccess(
-        string facilityName, string datimId, string state,
-        DateTimeOffset ranAt, int rowCount, string uploadUrl)
+    // ── Row fields ────────────────────────────────────────────────────────────
+    private TableEntity StatusEntity(FacilityStateSnapshot snapshot) =>
+        new(snapshot.DatimId, "latest")
+        {
+            ["FacilityName"] = snapshot.FacilityName,
+            ["DatimId"] = snapshot.DatimId,
+            ["State"] = snapshot.State,
+            ["MachineName"] = _machineName,
+            ["AppVersion"] = _appVersion,
+            ["Status"] = snapshot.HasError ? "error" : "online",
+            ["LastSeen"] = DateTimeOffset.UtcNow,
+            ["OfflineThresholdMinutes"] = _cfg.OfflineThresholdMinutes,
+            ["LastReportError"] = snapshot.LastError,
+        };
+
+    // LastReportRun stays an ISO-8601 string: BayCentral reads it with GetString and parses it.
+    private static void AddReportFields(TableEntity entity, FacilityStateSnapshot snapshot)
     {
-        try { _state.ReportSucceeded(facilityName, datimId, state, ranAt, rowCount, uploadUrl); }
+        entity["LastReportRun"] = snapshot.LastReportRun?.ToString("o") ?? string.Empty;
+        entity["LastReportRows"] = snapshot.LastRowCount;
+        entity["LastReportUrl"] = snapshot.LastUploadUrl;
+    }
+
+    // ── RecordReportUploadAsync / SetReportError / EnsureTableExistsAsync ─────
+    public async Task RecordReportUploadAsync(
+        string facilityName, string datimId, string state,
+        DateTimeOffset uploadedAt, int rowCount, string uploadUrl,
+        CancellationToken ct = default)
+    {
+        try { _state.ReportUploaded(facilityName, datimId, state, uploadedAt, rowCount, uploadUrl); }
         catch (Exception ex)
-        { _logger.LogWarning(ex, "[Heartbeat] SetReportSuccess state update failed."); }
+        {
+            _logger.LogWarning(ex, "[Heartbeat] Report upload state update failed.");
+            return;
+        }
+
+        var snapshot = _state.Snapshot();
+        if (string.IsNullOrWhiteSpace(snapshot.DatimId))
+        {
+            _logger.LogWarning("[Heartbeat] Report upload not written — facility identity not loaded.");
+            return;
+        }
+
+        var entity = StatusEntity(snapshot);
+        AddReportFields(entity, snapshot);
+
+        const int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            writeCts.CancelAfter(TimeSpan.FromSeconds(_cfg.WriteTimeoutSeconds));
+
+            try
+            {
+                await _table.UpsertEntityAsync(entity, TableUpdateMode.Merge, writeCts.Token);
+                _state.ReportWritten(uploadedAt);
+
+                _logger.LogInformation(
+                    "[Heartbeat] ✓ Last report upload written — facility={Facility} uploadedAt={UploadedAt:o} rows={Rows}",
+                    snapshot.FacilityName, uploadedAt, rowCount);
+                return;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    "[Heartbeat] Writing last report upload failed (attempt {A}/{Max}): {Type} — {Msg}",
+                    attempt, maxAttempts, ex.GetType().Name, ex.Message);
+            }
+
+            if (attempt < maxAttempts)
+            {
+                try { await Task.Delay(TimeSpan.FromSeconds(attempt * 2), ct); }
+                catch (OperationCanceledException) { return; }
+            }
+        }
+
+        _logger.LogWarning("[Heartbeat] Last report upload will be sent with the next heartbeat ping.");
     }
 
     public void SetReportError(string errorMessage)

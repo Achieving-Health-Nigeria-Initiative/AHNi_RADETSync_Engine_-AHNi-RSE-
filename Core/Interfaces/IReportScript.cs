@@ -13,10 +13,11 @@ public interface IReportScript
 
     /// <summary>
     /// Runs the full pipeline: read SQL → query DB → export Excel → upload blob.
-    /// Returns (RowCount, UploadUrl).
+    /// Returns (RowCount, UploadUrl, UploadedAt); UploadedAt is the storage service's time for the
+    /// upload, or null when nothing was uploaded.
     /// Throw on unrecoverable errors — ScriptManager catches per-script and continues.
     /// </summary>
-    Task<(int RowCount, string UploadUrl)> RunAsync(CycleContext context, CancellationToken ct = default);
+    Task<(int RowCount, string UploadUrl, DateTimeOffset? UploadedAt)> RunAsync(CycleContext context, CancellationToken ct = default);
 }
 
 /// <summary>
