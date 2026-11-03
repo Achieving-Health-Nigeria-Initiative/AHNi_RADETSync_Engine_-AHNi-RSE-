@@ -1,6 +1,7 @@
 ﻿using AHNiRSE.Application.Services;
 using AHNiRSE.Configuration;
 using AHNiRSE.Core.Interfaces;
+using AHNiRSE.Infrastructure.Backfill;
 using AHNiRSE.Infrastructure.Heartbeat;
 using AHNiRSE.Shared;
 using Cronos;
@@ -13,12 +14,18 @@ public class Worker(
     IAuthService auth,
     IHeartbeatService heartbeat,
     FacilityRunState state,
+    ForceBackfillJobStore backfillJobs,
     IOptions<ReportSettings> reportOptions,
     IOptions<HeartbeatSettings> heartbeatOptions,
+    IOptions<ForceBackfillSettings> backfillOptions,
     ILogger<Worker> logger) : BackgroundService
 {
     private readonly ReportSettings _reportSettings = reportOptions.Value;
     private readonly HeartbeatSettings _heartbeatSettings = heartbeatOptions.Value;
+    private readonly ForceBackfillSettings _backfillSettings = backfillOptions.Value;
+
+    // False until the job table is checked and this machine's interrupted jobs are released.
+    private bool _backfillReady;
 
  #if false
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -105,17 +112,18 @@ public class Worker(
             var loopToken = loopCts.Token;
             var heartbeatLoop = RunHeartbeatLoopAsync(loopToken);
             var reportLoop = RunReportLoopAsync(timeZone, schedules, loopToken);
+            var backfillLoop = RunBackfillLoopAsync(loopToken);
 
-            var completed = await Task.WhenAny(heartbeatLoop, reportLoop);
+            var completed = await Task.WhenAny(heartbeatLoop, reportLoop, backfillLoop);
             if (stoppingToken.IsCancellationRequested)
                 break;
 
-            logger.LogWarning("[Worker] A loop exited unexpectedly. Restarting both loops in 15 seconds.");
+            logger.LogWarning("[Worker] A loop exited unexpectedly. Restarting the loops in 15 seconds.");
             loopCts.Cancel();
 
             try
             {
-                await Task.WhenAll(heartbeatLoop, reportLoop);
+                await Task.WhenAll(heartbeatLoop, reportLoop, backfillLoop);
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
@@ -263,6 +271,82 @@ public class Worker(
         }
 
         logger.LogInformation("[Worker] Report loop stopped.");
+    }
+
+    // ── FORCE BACKFILL LOOP — polls BayCentral's job table, one job at a time ──
+    // Independent of the report loop: a backfill may run while a scheduled cycle runs
+    // (ReportOrchestrator.RunBackfillAsync decides when it must wait instead).
+    private async Task RunBackfillLoopAsync(CancellationToken ct)
+    {
+        if (!_backfillSettings.Enabled)
+        {
+            logger.LogInformation("[Backfill] Disabled (ForceBackfill:Enabled=false).");
+            try { await Task.Delay(Timeout.Infinite, ct); }
+            catch (OperationCanceledException) { }
+            return;
+        }
+
+        var interval = TimeSpan.FromMinutes(Math.Max(1, _backfillSettings.PollMinutes));
+        logger.LogInformation(
+            "[Backfill] Loop started — checking for force backfill jobs every {Interval} min.",
+            _backfillSettings.PollMinutes);
+
+        while (!ct.IsCancellationRequested)
+        {
+            await RunPendingBackfillsAsync(ct);
+
+            try { await Task.Delay(interval, ct); }
+            catch (OperationCanceledException) { break; }
+        }
+
+        logger.LogInformation("[Backfill] Loop stopped.");
+    }
+
+    private async Task RunPendingBackfillsAsync(CancellationToken ct)
+    {
+        var datimId = state.Snapshot().DatimId;
+        if (string.IsNullOrWhiteSpace(datimId))
+            return; // facility identity not loaded yet
+
+        try
+        {
+            if (!_backfillReady)
+            {
+                await backfillJobs.EnsureTableExistsAsync(ct);
+                await backfillJobs.ReleaseInterruptedAsync(datimId, ct);
+                _backfillReady = true;
+            }
+
+            while (!ct.IsCancellationRequested &&
+                   await backfillJobs.TryClaimNextAsync(datimId, ct) is { } job)
+            {
+                logger.LogInformation(
+                    "[Backfill] Claimed job {Job} (as of {AsOf}, attempt {A}/{Max}).",
+                    job.RowKey, job.AsOfDate.ToString("yyyy-MM-dd"), job.Attempts, _backfillSettings.MaxAttempts);
+
+                try
+                {
+                    var (rows, url, uploadedAt) = await orchestrator.RunBackfillAsync(job.AsOfDate, job.RowKey, ct);
+                    await backfillJobs.CompleteAsync(job, uploadedAt, rows, url, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    // The job stays running; it is released the next time the loop starts.
+                    _backfillReady = false;
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "[Backfill] Job {Job} failed: {Message}", job.RowKey, ex.Message);
+                    await backfillJobs.FailAsync(job, ex.Message, ct);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            logger.LogWarning("[Backfill] Checking for jobs failed: {Message}", ex.Message);
+        }
     }
 
     private async Task RunReportCycleSafelyAsync(CancellationToken ct)

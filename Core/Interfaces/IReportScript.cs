@@ -37,10 +37,14 @@ public interface IReportScript
 ///
 ///   CycleId     — 8-char hex for correlating log lines across the full pipeline.
 ///
-///   TriggeredBy — "Startup" | "Cron:0 */3 * * *" | "Manual" — for diagnostics.
+///   TriggeredBy — "Startup" | "Cron:0 */3 * * *" | "Manual" | "ForceBackfill:&lt;job&gt;" — for diagnostics.
+///
+///   Backfill    — true for a force backfill: RunDate/WatToday are the requested as-of date, and the
+///                 scripts ignore any StartDate/EndDate set in Reports:Scripts (defaults only).
 /// </summary>
 public sealed record CycleContext(
     DateOnly RunDate,
     DateOnly WatToday,
     string CycleId,
-    string TriggeredBy = "Cron");
+    string TriggeredBy = "Cron",
+    bool Backfill = false);

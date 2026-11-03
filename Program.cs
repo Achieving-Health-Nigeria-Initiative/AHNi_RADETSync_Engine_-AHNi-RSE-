@@ -5,6 +5,7 @@ using AHNiRSE.Configuration;
 using AHNiRSE.Core.Clock;
 using AHNiRSE.Core.Interfaces;
 using AHNiRSE.Infrastructure.Auth;
+using AHNiRSE.Infrastructure.Backfill;
 using AHNiRSE.Infrastructure.Audit;
 using AHNiRSE.Infrastructure.Clock;
 using AHNiRSE.Infrastructure.Database;
@@ -72,6 +73,7 @@ try
     builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection("Auth"));
     builder.Services.Configure<ReportSettings>(builder.Configuration.GetSection("Reports"));
     builder.Services.Configure<HeartbeatSettings>(builder.Configuration.GetSection("Heartbeat"));
+    builder.Services.Configure<ForceBackfillSettings>(builder.Configuration.GetSection("ForceBackfill"));
 
     // ── CLOCK — single source of truth for WAT date ────────────────────────
     // WatClock.TodayInWat() is called ONCE per cycle in ReportOrchestrator.
@@ -100,6 +102,9 @@ try
     builder.Services.AddSingleton<FacilityRunState>();
     builder.Services.AddSingleton<AzureHeartbeatService>();
     builder.Services.AddSingleton<IHeartbeatService>(sp => sp.GetRequiredService<AzureHeartbeatService>());
+
+    // ── FORCE BACKFILL ─────────────────────────────────────────────────────
+    builder.Services.AddSingleton<ForceBackfillJobStore>();
 
     // ── STORAGE PROVIDER ───────────────────────────────────────────────────
     // SQL scripts are always downloaded from blob storage (Storage:Azure:ScriptContainerName).

@@ -49,6 +49,32 @@ public class AuthSettings
     public bool PermitWhenInconclusive { get; set; } = false;
 }
 
+// ── Force backfill ────────────────────────────────────────────────────────────
+
+/// <summary>
+/// RADET backfills requested from BayCentral (Administration → Force Backfill). Each job asks for
+/// the workbook as of one past date; it is uploaded to RADET/&lt;date&gt;/ like a scheduled run.
+/// </summary>
+public class ForceBackfillSettings
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Azure table BayCentral writes the jobs to (same storage account as the heartbeat).</summary>
+    public string TableName { get; set; } = "ForceBackfillJobs";
+
+    /// <summary>How often to look for this facility's pending jobs.</summary>
+    public int PollMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// true = a backfill may run while a scheduled cycle runs (a backfill for today's date still waits).
+    /// false = backfills never overlap a scheduled cycle; a cycle that comes due waits for the backfill.
+    /// </summary>
+    public bool RunAlongsideSchedule { get; set; } = true;
+
+    /// <summary>Runs per job before it is marked failed (a restart mid-run counts as one).</summary>
+    public int MaxAttempts { get; set; } = 3;
+}
+
 // ── Reports ───────────────────────────────────────────────────────────────────
 
 public class ReportSettings

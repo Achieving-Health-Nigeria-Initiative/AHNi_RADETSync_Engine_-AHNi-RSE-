@@ -44,6 +44,28 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 - RADET query remains fatal anchor query.
 - Non-fatal query failure produces empty sheet, not full cycle failure.
 
+### 5) Force backfill (RADET for past dates)
+
+Superadmins request backfills in BayCentral (Administration → Force Backfill). BayCentral writes one row
+per facility per as-of date to the `ForceBackfillJobs` table (same storage account as the heartbeat):
+PartitionKey = DatimId, RowKey = `<RequestId>_<yyyy-MM-dd>`. A date range is one row per day.
+
+- A third loop checks this facility's `pending` rows every `ForceBackfill:PollMinutes` (default 5),
+  oldest request first, and runs them one at a time.
+- A job is claimed by setting it `running` with an ETag-conditional update; if BayCentral cancelled it
+  or another PC with the same DatimId claimed it first, Azure refuses (412) and the job is skipped.
+- The run is the normal RADET workbook with the as-of date as "today": every sheet's `:end_date` is that
+  date, start dates are the defaults (HTS: start of that fiscal year minus 3 months), and any
+  `StartDate`/`EndDate` in `Reports:Scripts` is ignored. It uploads to `RADET/<date>/<facility>_<date>.xlsx`,
+  replacing that day's file.
+- The job row gets `uploaded` (with Azure's `UploadedAt`, `Rows`, `BlobPath`) or `failed` (with `Error`).
+  A backfill never changes the heartbeat row (Last RADET, Status).
+- It runs alongside a scheduled cycle, except a backfill for today's date (same file) or when
+  `ForceBackfill:RunAlongsideSchedule` is false; then it takes the cycle lock, and a scheduled cycle that
+  comes due waits for it instead of being skipped.
+- Jobs this PC left `running` when the service stopped go back to `pending` at the next start, or to
+  `failed` after `ForceBackfill:MaxAttempts` (default 3) runs.
+
 ## Report Output
 
 `RadetReportScript` generates one workbook with these sheets:
@@ -162,6 +184,7 @@ Important keys:
 - `Reports:MaxParallelScripts`
 - `Heartbeat:IntervalMinutes`
 - `Heartbeat:OfflineThresholdMinutes`
+- `ForceBackfill:Enabled`, `ForceBackfill:PollMinutes`, `ForceBackfill:RunAlongsideSchedule`, `ForceBackfill:MaxAttempts`
 
 ## Local Development
 

@@ -321,7 +321,7 @@ public class RadetReportScript(
             .FirstOrDefault(s => string.Equals(s.Name, Name, StringComparison.OrdinalIgnoreCase))
             ?? throw new InvalidOperationException($"No '{Name}' config in Reports:Scripts.");
 
-        var (startDate, endDate) = ResolveDates(cfg, context.WatToday, _ => RadetDefaultStart);
+        var (startDate, endDate) = ResolveDates(DatesFrom(cfg, context), context.WatToday, _ => RadetDefaultStart);
         var facilityId = cfg.FacilityId > 0 ? cfg.FacilityId : await database.GetFacilityIdAsync(ct);
         var queryParameters = new QueryParameters
         {
@@ -352,26 +352,26 @@ public class RadetReportScript(
 
         using var parallelCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        var htsTask = RunNonFatalHtsQueryAsync(facilityId, context.WatToday, parallelCts.Token);
+        var htsTask = RunNonFatalHtsQueryAsync(facilityId, context, parallelCts.Token);
         var indexTask = RunNonFatalShapedQueryAsync("Index", "Index", queryParameters, IndexMapper.Map, parallelCts.Token);
 
         // Default start dates are the ones the earlier blob scripts used (the report module's own default is 1985).
         var datim = new Dictionary<string, object?> { [SheetLayouts.DatimCode] = facility.DatimId };
         var pmtctTask = RunNonFatalShapedQueryAsync(
             "PMTCTHTS", "PMTCT HTS",
-            SheetParameters("PMTCTHTS", facilityId, context.WatToday, new DateOnly(1980, 1, 1)),
+            SheetParameters("PMTCTHTS", facilityId, context, new DateOnly(1980, 1, 1)),
             rows => SheetProjection.Project(rows, SheetLayouts.PmtctHtsHeaders, SheetLayouts.PmtctHtsSources, datim),
             parallelCts.Token);
         var maternalTask = RunNonFatalShapedQueryAsync(
             "Maternal", "Maternal Cohort",
-            SheetParameters("Maternal", facilityId, context.WatToday, new DateOnly(1980, 1, 1)),
+            SheetParameters("Maternal", facilityId, context, new DateOnly(1980, 1, 1)),
             rows => SheetProjection.Project(rows, SheetLayouts.MaternalCohortHeaders, SheetLayouts.MaternalCohortSources, datim),
             parallelCts.Token);
         // Prep and AHD: the report module queries return exactly the sheets' headers.
         var prepTask = RunNonFatalDataTableQueryAsync(
-            "Prep", "Prep", SheetParameters("Prep", facilityId, context.WatToday, new DateOnly(1985, 1, 1)), parallelCts.Token);
+            "Prep", "Prep", SheetParameters("Prep", facilityId, context, new DateOnly(1985, 1, 1)), parallelCts.Token);
         var ahdTask = RunNonFatalDataTableQueryAsync(
-            "AHD", "AHD", SheetParameters("AHD", facilityId, context.WatToday, new DateOnly(1985, 1, 1)), parallelCts.Token);
+            "AHD", "AHD", SheetParameters("AHD", facilityId, context, new DateOnly(1985, 1, 1)), parallelCts.Token);
 
         List<Radet> radetRows;
         int radetCount;
@@ -454,7 +454,7 @@ public class RadetReportScript(
 
     private async Task<(List<Hts> Rows, int Count)> RunNonFatalHtsQueryAsync(
         long facilityId,
-        DateOnly watToday,
+        CycleContext context,
         CancellationToken ct)
     {
         if (!IsSheetEnabled("HTS"))
@@ -466,7 +466,7 @@ public class RadetReportScript(
         try
         {
             var htsCfg = FindScript("HTS");
-            var (startDate, endDate) = ResolveDates(htsCfg, watToday, HtsDefaultStart);
+            var (startDate, endDate) = ResolveDates(DatesFrom(htsCfg, context), context.WatToday, HtsDefaultStart);
             var parameters = new QueryParameters { FacilityId = facilityId, StartDate = startDate, EndDate = endDate };
             logger.LogInformation(
                 "[RADET] HTS period {Start}->{End}", startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
@@ -523,9 +523,9 @@ public class RadetReportScript(
     /// Query parameters for a sheet: the facility, and the sheet entry's StartDate (or
     /// <paramref name="defaultStart"/>) and EndDate (or today).
     /// </summary>
-    private QueryParameters SheetParameters(string scriptName, long facilityId, DateOnly watToday, DateOnly defaultStart)
+    private QueryParameters SheetParameters(string scriptName, long facilityId, CycleContext context, DateOnly defaultStart)
     {
-        var (start, end) = ResolveDates(FindScript(scriptName), watToday, _ => defaultStart);
+        var (start, end) = ResolveDates(DatesFrom(FindScript(scriptName), context), context.WatToday, _ => defaultStart);
         logger.LogInformation(
             "[RADET] {Script} period {Start}->{End}", scriptName, start.ToString("yyyy-MM-dd"), end.ToString("yyyy-MM-dd"));
         return new QueryParameters { FacilityId = facilityId, StartDate = start, EndDate = end };
@@ -593,6 +593,13 @@ public class RadetReportScript(
 
         return await File.ReadAllTextAsync(sqlPath, ct);
     }
+
+    /// <summary>
+    /// The script entry whose StartDate/EndDate apply: none for a force backfill, which always runs
+    /// as of its own date with the default start dates.
+    /// </summary>
+    private static ScriptConfig? DatesFrom(ScriptConfig? cfg, CycleContext context)
+        => context.Backfill ? null : cfg;
 
     /// <summary>
     /// Resolves the start and end dates from a script entry: EndDate or today, then StartDate or
