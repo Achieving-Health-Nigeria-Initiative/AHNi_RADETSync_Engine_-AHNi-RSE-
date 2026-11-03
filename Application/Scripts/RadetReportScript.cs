@@ -9,10 +9,10 @@ using Microsoft.Extensions.Options;
 namespace AHNiRSE.Application.Scripts;
 
 /// <summary>
-/// RADET report – seven-sheet workbook. Every SQL script is downloaded from the
-/// radet-sql blob container each cycle (there is no local copy).
+/// RADET report – seven-sheet workbook. Every SQL script is downloaded each cycle from the
+/// report-script folder of the autoreport blob container (there is no local copy).
 ///
-/// Sheet 1 – RADET          (radet_query_new.sql        – typed model, strongly mapped)
+/// Sheet 1 – RADET          (radet.sql                  – typed model, strongly mapped)
 /// Sheet 2 – HTS            (hts.sql                    – typed model, strongly mapped)
 /// Sheet 3 – Index          (index.sql                  – report module HTS Index (ICT), mapped to the sheet's 18 headers)
 /// Sheet 4 – PMTCT HTS      (pmtct_hts.sql              – report module PMTCT HTS (Pepfar), mapped to the sheet's 16 headers)
@@ -46,24 +46,24 @@ public class RadetReportScript(
 {
     public string Name => "RADET";
 
-    private const string DefaultRadetBlob = "radet_query_new.sql";
+    private const string DefaultRadetBlob = "report-script/radet.sql";
 
     /// <summary>RADET :start_date when Reports:Scripts RADET has no StartDate: the whole cohort.</summary>
     private static readonly DateOnly RadetDefaultStart = new(1980, 1, 1);
 
     /// <summary>
     /// Reports:Scripts entries that become extra sheets of this workbook (they are not separate
-    /// IReportScripts), with the blob in the radet-sql container used when an entry has no BlobPath.
+    /// IReportScripts), with the blob in the script container used when an entry has no BlobPath.
     /// </summary>
     internal static readonly IReadOnlyDictionary<string, string> SheetScripts =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["HTS"] = "hts.sql",
-            ["Index"] = "index_report.sql",
-            ["PMTCTHTS"] = "pmtct_hts_report.sql",
-            ["Maternal"] = "maternal_cohort_report.sql",
-            ["Prep"] = "prep_query.sql",
-            ["AHD"] = "ahd_query_raw.sql",
+            ["HTS"] = "report-script/hts.sql",
+            ["Index"] = "report-script/index.sql",
+            ["PMTCTHTS"] = "report-script/pmtct_hts.sql",
+            ["Maternal"] = "report-script/maternal.sql",
+            ["Prep"] = "report-script/prep.sql",
+            ["AHD"] = "report-script/ahd.sql",
         };
 
     // ── Index headers (empty Index sheet keeps them) ──────────────────────────
@@ -582,26 +582,10 @@ public class RadetReportScript(
     private bool IsSheetEnabled(string scriptName) => FindScript(scriptName)?.Enabled ?? true;
 
     /// <summary>
-    /// Reads a script from Reports:LocalScriptFolder when its entry has a LocalPath, otherwise
-    /// downloads its BlobPath (or <paramref name="defaultBlob"/>) from the blob script container.
+    /// Downloads a script's BlobPath (or <paramref name="defaultBlob"/>) from the blob script container.
     /// </summary>
     private async Task<string> LoadSqlAsync(string label, ScriptConfig? cfg, string defaultBlob, CancellationToken ct)
     {
-        if (!string.IsNullOrWhiteSpace(cfg?.LocalPath))
-        {
-            var folder = options.Value.LocalScriptFolder;
-            if (string.IsNullOrWhiteSpace(folder))
-                throw new InvalidOperationException(
-                    $"{label} has LocalPath '{cfg.LocalPath}' but Reports:LocalScriptFolder is not set.");
-
-            var localPath = Path.Combine(folder, cfg.LocalPath);
-            if (!File.Exists(localPath))
-                throw new FileNotFoundException($"{label} SQL missing: {localPath}", localPath);
-
-            logger.LogInformation("[RADET] {Label} SQL read from local script folder: {Path}", label, localPath);
-            return await File.ReadAllTextAsync(localPath, ct);
-        }
-
         var blobPath = cfg?.BlobPath is { Length: > 0 } configured ? configured : defaultBlob;
         var sqlPath = await storage.DownloadAsync(blobPath, ct);
         if (!File.Exists(sqlPath))

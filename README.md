@@ -43,21 +43,22 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 
 `RadetReportScript` generates one workbook with these sheets:
 
-| Sheet | Reports:Scripts entry | SQL blob (`radet-sql` container) |
+| Sheet | Reports:Scripts entry | SQL blob (`autoreport` container) |
 |---|---|---|
-| 1. RADET (typed mapping) | `RADET` | `radet_query_new.sql` |
-| 2. HTS (typed mapping) | `HTS` | `hts.sql` |
-| 3. Index (raw DataTable) | `Index` | `index_report.sql` |
-| 4. PMTCT HTS (raw DataTable) | `PMTCTHTS` | `pmtct_hts_report.sql` |
-| 5. Maternal Cohort (raw DataTable) | `Maternal` | `maternal_cohort_report.sql` |
-| 6. Prep (raw DataTable) | `Prep` | `prep_query.sql` |
-| 7. AHD (raw DataTable) | `AHD` | `ahd_query_raw.sql` |
+| 1. RADET (typed mapping) | `RADET` | `report-script/radet.sql` |
+| 2. HTS (typed mapping) | `HTS` | `report-script/hts.sql` |
+| 3. Index | `Index` | `report-script/index.sql` |
+| 4. PMTCT HTS | `PMTCTHTS` | `report-script/pmtct_hts.sql` |
+| 5. Maternal Cohort | `Maternal` | `report-script/maternal.sql` |
+| 6. Prep | `Prep` | `report-script/prep.sql` |
+| 7. AHD | `AHD` | `report-script/ahd.sql` |
 
 SQL scripts:
 
-- A script entry with a `LocalPath` is read from `Reports:LocalScriptFolder` (relative paths resolve against
-  the app's content root). All seven sheets currently do this. The scripts in `RADETSyncEngine\report-script\`
-  are the LAMISPlus report module 2.7.3 queries, unchanged:
+- Every script is downloaded at the start of each cycle from the `report-script/` folder of the `autoreport`
+  blob container (`Storage:Azure:ScriptContainerName`), next to the `RADET/` folder the workbooks are uploaded
+  to. Updating a blob updates every facility on its next run. The scripts are the LAMISPlus report module
+  2.7.3 queries, unchanged:
 
   | Sheet | Script | Report module source | Default start |
   |---|---|---|---|
@@ -70,8 +71,6 @@ SQL scripts:
   | AHD | `ahd.sql` | `query.yml` `ahd-query` | 1985-01-01 |
 
   `query.yml` is the one the report module runs with (`#Released: 2026-09-18`). End dates default to today.
-- Every other script is downloaded from the `Storage:Azure:ScriptContainerName` blob container at the start
-  of each cycle, so updating a blob updates every facility on its next run.
 - `BlobPath` may include a folder; if that path is missing, the file name at the container root is tried.
 - If the RADET script cannot be loaded the cycle fails and nothing is uploaded. If a sheet 2-7 script
   cannot be loaded or run, that sheet keeps its headers with no rows and the workbook is still uploaded.

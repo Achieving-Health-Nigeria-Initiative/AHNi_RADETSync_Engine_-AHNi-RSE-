@@ -64,12 +64,6 @@ public class ReportSettings
     public int DefaultScriptTimeoutSeconds { get; set; } = 900;
     public int MaxParallelScripts { get; set; } = 1;
 
-    /// <summary>
-    /// Folder holding the scripts named by <see cref="ScriptConfig.LocalPath"/>. A relative path is
-    /// resolved against the app's content root at startup.
-    /// </summary>
-    public string LocalScriptFolder { get; set; } = string.Empty;
-
     public List<ScriptConfig> Scripts { get; set; } = new();
 }
 
@@ -77,14 +71,8 @@ public class ScriptConfig
 {
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>Script path inside the blob script container, e.g. "radet_query_new.sql".</summary>
+    /// <summary>Script path inside the blob script container, e.g. "report-script/radet.sql".</summary>
     public string BlobPath { get; set; } = string.Empty;
-
-    /// <summary>
-    /// When set, the script is read from this file in Reports:LocalScriptFolder instead of
-    /// being downloaded from <see cref="BlobPath"/>.
-    /// </summary>
-    public string LocalPath { get; set; } = string.Empty;
 
     public bool Enabled { get; set; } = true;
 
