@@ -23,17 +23,10 @@
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
 
-    <!--
-      Npgsql — PostgreSQL driver for the lamisplus EMR database.
-      ACTIVE: required for PostgresService.cs to compile.
-    -->
+    <!-- Npgsql — PostgreSQL driver for the LAMISPlus database. -->
     <PackageReference Include="Npgsql" Version="9.0.3" />
 
-    <!--
-      ClosedXML — Excel export.
-      ACTIVE: required for ExcelExporter.cs to compile.
-      0.104.0 is the version NuGet resolved (0.103.0 was not available).
-    -->
+    <!-- ClosedXML — writes the RADET workbook. -->
     <PackageReference Include="ClosedXML" Version="0.102.2" />
     <PackageReference Include="Serilog" Version="4.3.1" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
@@ -47,12 +40,6 @@
       Pinning to 9.0.0 resolves both advisories.
     -->
     <PackageReference Include="System.IO.Packaging" Version="9.0.0" />
-
-    <!--
-      Cron scheduling — replaces the Task.Delay loop in Worker.cs.
-      3.11.0 is the version NuGet resolved (3.10.1 was not available).
-    -->
-    <!-- <PackageReference Include="Quartz.Extensions.Hosting" Version="3.11.0" /> -->
   </ItemGroup>
 
   <!-- Exclude tools and other workspace helper projects from the main worker compile

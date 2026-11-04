@@ -8,13 +8,13 @@ namespace AHNiRSE.Heartbeat;
 /// <summary>
 /// Writes facility availability signals to Azure Table Storage.
 ///
-/// RESILIENCE IMPROVEMENTS (enterprise version):
+/// RESILIENCE:
 ///   • MaxRetryAttempts configurable — set to 10 in appsettings.json.
 ///   • Per-attempt timeout (WriteTimeoutSeconds) — never hangs indefinitely.
 ///   • Exponential back-off with jitter — avoids thundering herd across facilities.
+///   • After every attempt fails, pings pause for CooldownMinutes before trying again.
 ///   • RecordReportUploadAsync / SetReportError are fire-and-forget (no exceptions escape).
-///   • PingAsync never throws — Worker loop catches at the boundary but this adds
-///     a second safety layer so a transient Azure Table outage cannot crash the loop.
+///   • PingAsync never throws, so a transient Azure Table outage cannot stop HeartbeatWorker.
 ///
 /// TABLE LAYOUT:
 ///   PartitionKey = DatimId  (one row per facility, permanent)
@@ -30,12 +30,11 @@ namespace AHNiRSE.Heartbeat;
 /// BayCentral OFFLINE DETECTION:
 ///   BayCentral reads OfflineThresholdMinutes from the row.
 ///   If Now - LastSeen > OfflineThresholdMinutes → facility is OFFLINE.
-///   Because Worker.HeartbeatLoopAsync runs independently of report cycles,
+///   Because HeartbeatWorker runs independently of report cycles,
 ///   the heartbeat keeps firing even during a failed or long-running report.
 /// </summary>
 public sealed class AzureHeartbeatService
 {
-    // ── existing fields unchanged ─────────────────────────────────────────────
     private readonly TableClient _table;
     private readonly FacilityRunState _state;
     private readonly HeartbeatSettings _cfg;
@@ -44,7 +43,7 @@ public sealed class AzureHeartbeatService
     private readonly string _appVersion;
     private static readonly Random _jitter = new();
 
-    // ── NEW: cooldown state ───────────────────────────────────────────────────
+    // ── Cooldown ──────────────────────────────────────────────────────────────
     // After all retry attempts fail, PingAsync returns immediately and sets
     // _cooldownUntil to Now + CooldownMinutes. Every subsequent call checks
     // this before doing any network work. Once the cooldown expires, a full

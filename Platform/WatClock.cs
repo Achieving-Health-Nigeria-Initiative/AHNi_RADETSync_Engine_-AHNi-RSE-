@@ -22,9 +22,6 @@ public sealed class WatClock : IReportClock
     public DateOnly TodayInWat()
         => DateOnly.FromDateTime(NowInWat().DateTime);
 
-    public DateTime UtcNow()
-        => DateTime.UtcNow;
-
     // ── WAT timezone resolution with fallback chain ───────────────────────────
     private static TimeZoneInfo ResolveWat()
     {

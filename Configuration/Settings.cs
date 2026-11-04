@@ -16,7 +16,6 @@ public class AzureStorageOptions
     public int DownloadRetryDelaySeconds { get; set; } = 5;
     public int DownloadTimeoutSeconds { get; set; } = 300;
     public string TempDownloadPath { get; set; } = string.Empty;
-    public bool CleanStagingAfterDeploy { get; set; } = true;
 }
 
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
@@ -64,8 +63,6 @@ public class AuthSettings
     public bool? Enabled { get; set; }
     public string LicenseKey { get; set; } = string.Empty;
     public string ValidationEndpoint { get; set; } = string.Empty;
-    public string WorkerApiKeyHeaderName { get; set; } = "X-AHNi-RSE-Key";
-    public string WorkerApiKey { get; set; } = string.Empty;
     public string LicenseTier { get; set; } = "Enterprise";
     public int RequestTimeoutSeconds { get; set; } = 15;
     public bool EnableDailyCache { get; set; } = true;

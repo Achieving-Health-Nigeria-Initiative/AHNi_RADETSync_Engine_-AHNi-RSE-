@@ -10,15 +10,6 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
     private static readonly XLColor HeaderFg = XLColor.Black;
     private static readonly XLColor AltRowFill = XLColor.FromHtml("#F2F2F2");
 
-    // ── Public: single-sheet (unchanged signature) ────────────────────────────
-    public Task ExportAsync(
-        IEnumerable<object> data,
-        string outputPath,
-        Dictionary<string, string> headerMap,
-        CancellationToken ct = default)
-        => ExportSingleSheetAsync(data, outputPath, "Report", headerMap, ct);
-
-    // ── Public: multi-sheet ───────────────────────────────────────────────────
     /// <summary>
     /// Writes every sheet in <paramref name="sheets"/> into one .xlsx workbook.
     ///
@@ -126,40 +117,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
             c.AdjustToContents(1, Math.Max(dt.Rows.Count + 1, 2), 10, 50);
     }
 
-    // ── Private: single-sheet helper (unchanged) ──────────────────────────────
-    private async Task ExportSingleSheetAsync(
-        IEnumerable<object> data,
-        string outputPath,
-        string sheetName,
-        Dictionary<string, string>? headerMap,
-        CancellationToken ct)
-    {
-        EnsureDirectory(outputPath);
-
-        var rows = data?.ToList() ?? [];
-        using var wb = new XLWorkbook();
-        var ws = wb.Worksheets.Add(SafeSheetName(sheetName));
-
-        var props = rows.Count > 0 ? GetReadableProperties(rows[0].GetType()) : [];
-        if (props.Count == 0)
-        {
-            WriteEmptySheet(ws, headerMap);
-            wb.SaveAs(outputPath);
-            logger.LogInformation("[Excel] Saved empty workbook: {Path}", outputPath);
-            await Task.CompletedTask;
-            return;
-        }
-
-        WriteHeaders(ws, props, headerMap);
-        WriteRows(ws, rows, props);
-        FormatWorksheet(ws, rows.Count);
-
-        wb.SaveAs(outputPath);
-        logger.LogInformation("[Excel] Saved: {Path}", outputPath);
-        await Task.CompletedTask;
-    }
-
-    // ── Typed-sheet helpers (unchanged) ───────────────────────────────────────
+    // ── Typed-sheet helpers ───────────────────────────────────────────────────
     private static List<PropertyInfo> GetReadableProperties(Type type)
         => type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
                .Where(p => p.CanRead)
@@ -282,11 +240,11 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
 ///
 /// Two modes — use ONE per sheet:
 ///
-///   A) Typed rows (existing behaviour):
+///   A) Typed rows:
 ///        new ExcelSheetDefinition("RADET", radetRows.Cast{object}().ToList(), RadetHeaderMap)
 ///      Rows is enumerated via reflection; HeaderMap re-labels property names.
 ///
-///   B) Raw DataTable (new — no typed model required):
+///   B) Raw DataTable (no typed model required):
 ///        new ExcelSheetDefinition("Index", RawData: indexDataTable)
 ///      Column names from the DataTable are written directly as headers.
 ///      HeaderMap is ignored when RawData is supplied.

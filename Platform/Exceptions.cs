@@ -1,8 +1,8 @@
 ﻿namespace AHNiRSE.Platform;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Typed exceptions — thrown by infrastructure, caught and logged at Worker level.
-// Never throw raw Exception in application code.
+// Typed exceptions thrown by the platform code (database, blob storage); the report cycle
+// or background loop that called it catches and logs them.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Base for all AHNiRSE exceptions.</summary>

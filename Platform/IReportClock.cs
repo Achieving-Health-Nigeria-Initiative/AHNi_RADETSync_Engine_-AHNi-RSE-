@@ -1,37 +1,13 @@
 ﻿namespace AHNiRSE.Platform;
 
 /// <summary>
-/// Single source of truth for ALL date/time values across the pipeline.
+/// Single source of truth for report dates: today and now in West Africa Time (UTC+1).
 ///
-/// MIDNIGHT SAFETY ANALYSIS (cron: "0 */3 * * *", timezone: Africa/Lagos = WAT = UTC+1)
-///
-/// Potential midnight crossing scenarios:
-///
-///   SCENARIO A — Cycle starts 23:00 WAT, runs 30 min, finishes 23:30 WAT
-///     RunDate computed at START = 2026-04-30  ← correct, both folder and file
-///     No issue.
-///
-///   SCENARIO B — Cycle starts 23:00 WAT, runs 2h, finishes 01:00 WAT (next day)
-///     RunDate computed at START = 2026-04-30  ← locked by CycleContext, still correct
-///     No issue — CycleContext immutably holds the date from cycle start.
-///
-///   SCENARIO C — Service restarts at 00:05 WAT (RunOnStartup: true)
-///     RunDate computed NOW = 2026-05-01  ← correct for the new day
-///     No issue.
-///
-///   SCENARIO D — ResolveDates() uses DateTime.UtcNow instead of WAT
-///     At 23:30 WAT = 22:30 UTC:
-///       DateTime.UtcNow.Date = 2026-04-29  ← WRONG, one day behind WAT
-///     Fix: ResolveDates() must receive watToday from CycleContext, not compute its own.
-///
-///   SCENARIO E — Worker cron scheduler uses UTC for next-occurrence
-///     Cronos GetNextOccurrence(nowUtc, timeZone) correctly converts internally.
-///     Lagos timezone fires at 00:00, 03:00, 06:00... WAT regardless of server TZ.
-///     No issue if Cronos library is used correctly (see Worker.cs).
-///
-/// RULE: Nothing in the pipeline calls DateTime.Now, DateTime.Today, or DateTime.UtcNow
-///       for date-labelling purposes. All date values come from IReportClock, injected
-///       once at cycle start into CycleContext and passed down immutably.
+/// The WAT date is read ONCE, at cycle start in ReportOrchestrator, and carried in CycleContext, so
+/// a cycle that crosses midnight still files its workbook under the day it started, and the
+/// reporting period uses WAT rather than UTC (at 23:30 WAT the UTC date is still the day before).
+/// Nothing else may use DateTime.Now / Today / UtcNow to date a report, folder or file.
+/// (Cron scheduling works in UTC with the time zone applied by Cronos - see Schedule/CronSchedule.)
 /// </summary>
 public interface IReportClock
 {
@@ -44,11 +20,4 @@ public interface IReportClock
     /// Do not call this anywhere else.
     /// </summary>
     DateOnly TodayInWat();
-
-    /// <summary>
-    /// Returns current UTC DateTime.
-    /// Use ONLY for scheduling calculations (Cronos next-occurrence).
-    /// Never use for date-labelling files or folders.
-    /// </summary>
-    DateTime UtcNow();
 }

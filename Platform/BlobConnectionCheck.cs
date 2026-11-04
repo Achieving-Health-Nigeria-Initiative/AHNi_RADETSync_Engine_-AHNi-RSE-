@@ -8,15 +8,14 @@ namespace AHNiRSE.Platform;
 /// <summary>
 /// ONE JOB ONLY: verify Azure Blob Storage is reachable and both containers are accessible.
 ///
-/// Called once in Program.cs BEFORE host.Run() — if anything fails the service
-/// logs clearly and exits rather than running silently broken.
+/// Called once in Program.cs BEFORE host.Run(). A failure is logged as a warning and the service
+/// still starts: blob downloads and uploads retry on their own once storage is reachable.
 ///
 /// Three checks in order:
 ///   1. Storage account reachable  (GetPropertiesAsync)
 ///   2. Script container exists and is readable
 ///   3. Output container exists (or is created) and is writable
 ///
-/// Location: Infrastructure/Health/BlobConnectionCheck.cs
 /// Registered: Program.cs → host.Services.GetRequiredService<BlobConnectionCheck>()
 /// </summary>
 public class BlobConnectionCheck(

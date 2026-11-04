@@ -10,7 +10,7 @@ public sealed class FacilityRunState
     private readonly object _lock = new();
     private string _facilityName = string.Empty;
     private string _datimId = string.Empty;
-    private string _state = string.Empty;   
+    private string _state = string.Empty;
     private string _lastError = string.Empty;
     private string _lastUploadUrl = string.Empty;
     private int _lastRowCount;
@@ -129,7 +129,7 @@ public sealed class FacilityRunState
 public sealed record FacilityStateSnapshot(
     string FacilityName,
     string DatimId,
-    string State,               
+    string State,
     DateTimeOffset? LastReportRun,
     int LastRowCount,
     string LastUploadUrl,

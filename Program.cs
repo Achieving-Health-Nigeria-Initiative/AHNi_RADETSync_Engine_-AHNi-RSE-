@@ -96,7 +96,6 @@ try
     // ── INFRASTRUCTURE ─────────────────────────────────────────────────────
     builder.Services.AddSingleton<IDatabaseService, PostgresService>();
     builder.Services.AddSingleton<ExcelExporter>();
-    builder.Services.AddHttpClient();
     builder.Services.AddHttpClient(nameof(InstallationAuthService), client =>
     {
         // Match Postman's request profile so Cloudflare bot protection does not challenge the request.
