@@ -84,8 +84,14 @@ PartitionKey = DatimId, RowKey = `<RequestId>_<yyyy-MM-dd>`. A date range is one
 - It runs alongside a scheduled cycle, except a backfill for today's date (same file) or when
   `ForceBackfill:RunAlongsideSchedule` is false; then it takes the cycle lock, and a scheduled cycle that
   comes due waits for it instead of being skipped.
+- Each date is its own job with its own run limit (`Reports:GlobalCycleTimeoutSeconds`, 1 hour); a date
+  range runs as one job per day, one after another.
 - Jobs this PC left `running` when the service stopped go back to `pending` at the next start, or to
   `failed` after `ForceBackfill:MaxAttempts` (default 3) runs.
+- On every poll, a job still `running` 3 x `Reports:GlobalCycleTimeoutSeconds` (3 hours) after it was
+  picked up is released the same way, whichever PC took it: no live run lasts that long, so that PC
+  was retired (for example after a database migration), renamed or died, and nothing else would
+  free the job.
 
 ## Report Output
 

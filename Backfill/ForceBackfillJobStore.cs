@@ -43,13 +43,35 @@ public sealed class ForceBackfillJobStore
 
     /// <summary>
     /// Jobs this machine left running when the service stopped go back to pending, or to failed
-    /// once they have used all MaxAttempts.
+    /// once they have used all MaxAttempts. Called when the backfill loop starts.
     /// </summary>
-    public async Task ReleaseInterruptedAsync(string datimId, CancellationToken ct = default)
-    {
-        var filter = TableClient.CreateQueryFilter(
-            $"PartitionKey eq {datimId} and Status eq {"running"} and MachineName eq {_machineName}");
+    public Task ReleaseInterruptedAsync(string datimId, CancellationToken ct = default)
+        => ReleaseAsync(
+            TableClient.CreateQueryFilter(
+                $"PartitionKey eq {datimId} and Status eq {"running"} and MachineName eq {_machineName}"),
+            (job, attempts) => $"Interrupted {attempts} time(s) - the service stopped during the run",
+            ct);
 
+    /// <summary>
+    /// Jobs running for longer than <paramref name="staleAfter"/> since they were picked up, on any
+    /// machine. No run lasts that long, so the machine that took the job stopped and never came back
+    /// (retired after a database migration, renamed, or dead) and nothing else would ever release it.
+    /// They go back to pending, or to failed once they have used all MaxAttempts.
+    /// </summary>
+    public Task ReleaseAbandonedAsync(string datimId, TimeSpan staleAfter, CancellationToken ct = default)
+    {
+        var cutoff = DateTimeOffset.UtcNow - staleAfter;
+        return ReleaseAsync(
+            TableClient.CreateQueryFilter(
+                $"PartitionKey eq {datimId} and Status eq {"running"} and PickedUpAt lt {cutoff}"),
+            (job, attempts) =>
+                $"Abandoned by {job.GetString("MachineName") ?? "another machine"}: no result " +
+                $"{staleAfter.TotalHours:0.#}h after it was picked up ({attempts} attempt(s))",
+            ct);
+    }
+
+    private async Task ReleaseAsync(string filter, Func<TableEntity, int, string> failReason, CancellationToken ct)
+    {
         await foreach (var job in _table.QueryAsync<TableEntity>(filter, cancellationToken: ct))
         {
             var attempts = job.GetInt32("Attempts") ?? 0;
@@ -60,20 +82,21 @@ public sealed class ForceBackfillJobStore
             };
             if (giveUp)
             {
-                patch["Error"] = $"Interrupted {attempts} time(s) - the service stopped during the run";
+                patch["Error"] = failReason(job, attempts);
                 patch["CompletedAt"] = DateTimeOffset.UtcNow;
             }
 
             try
             {
+                // Conditional: if the job finished or BayCentral changed it meanwhile, leave it.
                 await _table.UpdateEntityAsync(patch, job.ETag, TableUpdateMode.Merge, ct);
                 _logger.LogWarning(
-                    "[Backfill] Job {Job} was interrupted (attempt {A}/{Max}) - now {Status}.",
-                    job.RowKey, attempts, _cfg.MaxAttempts, patch["Status"]);
+                    "[Backfill] Job {Job} released from {Machine} (picked up {PickedUp:o}, attempt {A}/{Max}) - now {Status}.",
+                    job.RowKey, job.GetString("MachineName"), job.GetDateTimeOffset("PickedUpAt"),
+                    attempts, _cfg.MaxAttempts, patch["Status"]);
             }
             catch (RequestFailedException ex) when (ex.Status == 412)
             {
-                // Changed in BayCentral meanwhile - leave it.
             }
         }
     }

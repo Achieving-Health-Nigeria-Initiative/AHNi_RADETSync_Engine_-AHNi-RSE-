@@ -8,15 +8,26 @@ namespace AHNiRSE.Backfill;
 /// facility's pending jobs one at a time, oldest first, runs each through
 /// ReportOrchestrator.RunBackfillAsync (which decides whether it may overlap a scheduled cycle) and
 /// records the result on the job row.
+///
+/// Every poll also releases jobs left running by a machine that never came back (see
+/// ForceBackfillJobStore.ReleaseAbandonedAsync), so a job taken by a retired or renamed PC is not
+/// stuck forever.
 /// </summary>
 public sealed class BackfillWorker(
     ReportOrchestrator orchestrator,
     ForceBackfillJobStore jobs,
     FacilityRunState state,
     IOptions<ForceBackfillSettings> options,
+    IOptions<ReportSettings> reportOptions,
     ILogger<BackfillWorker> logger) : RestartingWorker(logger)
 {
     private readonly ForceBackfillSettings _settings = options.Value;
+
+    // A job's run is cut off after Reports:GlobalCycleTimeoutSeconds, and before that it may wait up to
+    // one scheduled cycle for the cycle lock, so a live machine's job never stays running for more than
+    // about twice that. Three times it means the machine that picked it up is gone.
+    private readonly TimeSpan _abandonedAfter =
+        TimeSpan.FromSeconds(3 * Math.Max(30, reportOptions.Value.GlobalCycleTimeoutSeconds));
 
     // False until the job table is checked and this machine's interrupted jobs are released.
     private bool _ready;
@@ -57,6 +68,8 @@ public sealed class BackfillWorker(
                 await jobs.ReleaseInterruptedAsync(datimId, ct);
                 _ready = true;
             }
+
+            await jobs.ReleaseAbandonedAsync(datimId, _abandonedAfter, ct);
 
             while (!ct.IsCancellationRequested && await jobs.TryClaimNextAsync(datimId, ct) is { } job)
             {
