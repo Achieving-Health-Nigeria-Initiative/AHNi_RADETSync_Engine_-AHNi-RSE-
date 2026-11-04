@@ -1,5 +1,4 @@
-﻿using AHNiRSE;
-using Azure.Data.Tables;
+﻿using Azure.Data.Tables;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Serilog;
@@ -128,8 +127,10 @@ try
     builder.Services.AddSingleton<ScriptManager>();
     builder.Services.AddSingleton<ReportOrchestrator>();
 
-    // ── WORKER ─────────────────────────────────────────────────────────────
-    builder.Services.AddHostedService<Worker>();
+    // ── BACKGROUND LOOPS — independent; each restarts itself if it fails ───
+    builder.Services.AddHostedService<HeartbeatWorker>();
+    builder.Services.AddHostedService<ScheduleWorker>();
+    builder.Services.AddHostedService<BackfillWorker>();
 
     var host = builder.Build();
 

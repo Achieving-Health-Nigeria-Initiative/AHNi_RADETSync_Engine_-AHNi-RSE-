@@ -25,27 +25,6 @@ public class ReportOrchestrator(
     // Set while a force backfill holds _cycleLock: a scheduled cycle then waits instead of skipping.
     private volatile bool _backfillHoldsCycleLock;
 
-    public Task<(string FacilityName, string DatimId, string State)> LoadFacilityIdentityAsync(
-        CancellationToken ct = default)
-    {
-        try
-        {
-            var facility = database.GetFacilityInfo();
-            if (string.IsNullOrWhiteSpace(facility.DatimId))
-            {
-                logger.LogWarning("[Orchestrator] DatimId empty - check DB config.");
-                return Task.FromResult((string.Empty, string.Empty, string.Empty));
-            }
-
-            return Task.FromResult((facility.FacilityName, facility.DatimId, facility.State));
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "[Orchestrator] LoadFacilityIdentity failed.");
-            return Task.FromResult((string.Empty, string.Empty, string.Empty));
-        }
-    }
-
     public async Task<(int TotalRows, string UploadUrl)> RunAsync(
         CancellationToken ct = default,
         string triggeredBy = "Cron")
