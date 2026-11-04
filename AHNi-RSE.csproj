@@ -79,12 +79,13 @@
     </Content>
   </ItemGroup>
 
+	<!-- Installer scripts live in deploy/ but are published next to the exe, where Install.bat expects them. -->
 	<ItemGroup>
-		<Content Include="Install.bat">
+		<Content Include="deploy\Install.bat" Link="Install.bat">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
 		</Content>
-		<Content Include="Deploy-AHNi-RSEService.ps1">
+		<Content Include="deploy\Deploy-AHNi-RSEService.ps1" Link="Deploy-AHNi-RSEService.ps1">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
 		</Content>

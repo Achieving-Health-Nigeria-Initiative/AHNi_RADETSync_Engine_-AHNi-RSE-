@@ -1,10 +1,4 @@
-﻿using AHNiRSE.Application.Services;
-using AHNiRSE.Configuration;
-using AHNiRSE.Core.Interfaces;
-using AHNiRSE.Infrastructure.Backfill;
-using AHNiRSE.Infrastructure.Heartbeat;
-using AHNiRSE.Shared;
-using Cronos;
+﻿using Cronos;
 using Microsoft.Extensions.Options;
 
 namespace AHNiRSE;

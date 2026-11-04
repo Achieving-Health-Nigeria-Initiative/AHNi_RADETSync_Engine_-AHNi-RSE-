@@ -1,9 +1,6 @@
-using AHNiRSE.Application.Scripts;
 using AHNiRSE.Configuration;
-using AHNiRSE.Core.Interfaces;
-using AHNiRSE.Infrastructure.Database;
-using AHNiRSE.Infrastructure.Export;
-using AHNiRSE.Infrastructure.Storage;
+using AHNiRSE.Platform;
+using AHNiRSE.Reports;
 using Azure.Storage.Blobs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
