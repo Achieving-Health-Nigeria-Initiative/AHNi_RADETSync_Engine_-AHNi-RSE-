@@ -33,13 +33,14 @@ param(
     [string]$DisplayName    = "AHNi RADETSync Engine (AHNi-RSE) - Facility Data Uploader",
     [string]$Description    = "Runs scheduled RADET/HTS reports and sends heartbeats to BayCentral.",
     [string]$ExeName        = "AHNiRSE.exe",
-    [string]$LogPath        = "C:\ProgramData\AHNi-RSE\Logs",
+    [string]$LogPath        = "",   # always <InstallPath>\logs (the service writes its logs next to its exe)
     [string]$StagingPath    = "C:\Reports\Staging",
     [string]$OutputPath     = "C:\Reports\Output",
     [int]   $RestartDelayMs = 60000   # 60 seconds - how long to wait before restart on failure
 )
 
 Set-StrictMode -Version Latest
+if (-not $LogPath) { $LogPath = Join-Path $InstallPath 'logs' }
 $ErrorActionPreference = "Stop"
 
 # -- 0. Elevation check ---------------------------------------------------------

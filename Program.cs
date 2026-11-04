@@ -6,9 +6,8 @@ using Serilog.Events;
 
 var isWindowsService = WindowsServiceHelpers.IsWindowsService();
 
-var logDir = isWindowsService
-    ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "AHNi-RSE", "Logs")
-    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AHNi-RSE", "Logs");
+// Logs live next to the exe (<install folder>\logs), whether it runs as a service or from a console.
+var logDir = AppPaths.Logs;
 
 Directory.CreateDirectory(logDir);
 

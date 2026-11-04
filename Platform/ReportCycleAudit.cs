@@ -1,5 +1,4 @@
 ﻿using System.Text.Json;
-using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.Extensions.Options;
 
 namespace AHNiRSE.Platform;
@@ -72,11 +71,7 @@ public class ReportCycleAudit(
             return _settings.CycleAuditPath;
         }
 
-        var root = WindowsServiceHelpers.IsWindowsService()
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "AHNi-RSE", "Logs")
-            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AHNi-RSE", "Logs");
-
-        return Path.Combine(root, "cycle-audit.jsonl");
+        return Path.Combine(AppPaths.Logs, "cycle-audit.jsonl");
     }
 }
 

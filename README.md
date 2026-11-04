@@ -300,6 +300,9 @@ Expected behavior when network is down:
 
 ## Troubleshooting
 
+Logs are in the `logs` folder next to `AHNiRSE.exe` (`C:\Services\AHNi-RSE\logs` for the service):
+one `ahni-rse-<date>.log` per day (30 days kept) and `cycle-audit.jsonl`, one line per report cycle.
+
 ### Service running but no uploads
 
 - Check storage connection string
