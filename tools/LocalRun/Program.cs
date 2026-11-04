@@ -43,12 +43,13 @@ using var lf = LoggerFactory.Create(b => b
 var azure = new AzureStorageProvider(
     new BlobServiceClient(cfg.GetConnectionString("AzureBlobStorage")),
     Options.Create(storage), lf.CreateLogger<AzureStorageProvider>());
-var script = new RadetReportScript(
-    new LocalOutputStorage(azure, args[3], lf.CreateLogger("LocalOutput")),
+var output = new LocalOutputStorage(azure, args[3], lf.CreateLogger("LocalOutput"));
+var workbook = new RadetWorkbook(
+    new ReportScripts(output, Options.Create(reports)),
+    output,
     new PostgresService(Options.Create(db), lf.CreateLogger<PostgresService>()),
     new ExcelExporter(lf.CreateLogger<ExcelExporter>()),
-    Options.Create(reports),
-    lf.CreateLogger<RadetReportScript>());
+    lf.CreateLogger<RadetWorkbook>());
 
 var backfill = args.Length > 4;
 var asOf = backfill ? DateOnly.Parse(args[4]) : DateOnly.FromDateTime(DateTime.Now);
@@ -56,7 +57,7 @@ var context = new CycleContext(asOf, asOf, "local-" + DateTime.Now.ToString("HHm
     backfill ? "ForceBackfill:local" : "LocalRun", Backfill: backfill);
 
 var sw = System.Diagnostics.Stopwatch.StartNew();
-var (rows, path, _) = await script.RunAsync(context);
+var (rows, path, _) = await workbook.RunAsync(context);
 Console.WriteLine($"DONE {rows:N0} RADET rows in {sw.Elapsed.TotalMinutes:F1} min -> {path}");
 return 0;
 

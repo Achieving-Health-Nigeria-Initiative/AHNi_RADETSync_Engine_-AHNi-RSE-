@@ -85,7 +85,6 @@ try
     // ── SHARED STATE & HEARTBEAT ───────────────────────────────────────────
     builder.Services.AddSingleton<FacilityRunState>();
     builder.Services.AddSingleton<AzureHeartbeatService>();
-    builder.Services.AddSingleton<IHeartbeatService>(sp => sp.GetRequiredService<AzureHeartbeatService>());
 
     // ── FORCE BACKFILL ─────────────────────────────────────────────────────
     builder.Services.AddSingleton<ForceBackfillJobStore>();
@@ -96,7 +95,7 @@ try
 
     // ── INFRASTRUCTURE ─────────────────────────────────────────────────────
     builder.Services.AddSingleton<IDatabaseService, PostgresService>();
-    builder.Services.AddSingleton<IExcelExporter, ExcelExporter>();
+    builder.Services.AddSingleton<ExcelExporter>();
     builder.Services.AddHttpClient();
     builder.Services.AddHttpClient(nameof(InstallationAuthService), client =>
     {
@@ -116,15 +115,13 @@ try
                                | System.Net.DecompressionMethods.Deflate
                                | System.Net.DecompressionMethods.Brotli
     });
-    builder.Services.AddSingleton<IAuthService, InstallationAuthService>();
-    builder.Services.AddSingleton<IReportCycleAudit, ReportCycleAudit>();
+    builder.Services.AddSingleton<InstallationAuthService>();
+    builder.Services.AddSingleton<ReportCycleAudit>();
 
-    // ── REPORT SCRIPTS ─────────────────────────────────────────────────────
-    // To add a new report: implement IReportScript, register it here.
-    // HTS, Index, PMTCT HTS, Maternal, Prep and AHD are sheets of the RADET workbook, not scripts.
-    builder.Services.AddSingleton<IReportScript, RadetReportScript>();
-
-    builder.Services.AddSingleton<ScriptManager>();
+    // ── RADET WORKBOOK ─────────────────────────────────────────────────────
+    // HTS, Index, PMTCT HTS, Maternal, Prep and AHD are sheets of the RADET workbook.
+    builder.Services.AddSingleton<ReportScripts>();
+    builder.Services.AddSingleton<RadetWorkbook>();
     builder.Services.AddSingleton<ReportOrchestrator>();
 
     // ── BACKGROUND LOOPS — independent; each restarts itself if it fails ───

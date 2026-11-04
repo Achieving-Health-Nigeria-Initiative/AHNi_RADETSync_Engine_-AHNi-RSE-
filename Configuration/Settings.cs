@@ -116,7 +116,6 @@ public class ReportSettings
     public string TimeZoneId { get; set; } = "UTC";
     public int GlobalCycleTimeoutSeconds { get; set; } = 3600;
     public int DefaultScriptTimeoutSeconds { get; set; } = 900;
-    public int MaxParallelScripts { get; set; } = 1;
 
     public List<ScriptConfig> Scripts { get; set; } = new();
 }

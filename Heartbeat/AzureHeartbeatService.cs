@@ -33,7 +33,7 @@ namespace AHNiRSE.Heartbeat;
 ///   Because Worker.HeartbeatLoopAsync runs independently of report cycles,
 ///   the heartbeat keeps firing even during a failed or long-running report.
 /// </summary>
-public sealed class AzureHeartbeatService : IHeartbeatService
+public sealed class AzureHeartbeatService
 {
     // ── existing fields unchanged ─────────────────────────────────────────────
     private readonly TableClient _table;

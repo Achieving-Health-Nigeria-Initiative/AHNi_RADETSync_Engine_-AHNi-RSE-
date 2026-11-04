@@ -6,7 +6,7 @@ namespace AHNiRSE.Platform;
 
 public class ReportCycleAudit(
     IOptions<ReportSettings> reportOptions,
-    ILogger<ReportCycleAudit> logger) : IReportCycleAudit
+    ILogger<ReportCycleAudit> logger)
 {
     private readonly ReportSettings _settings = reportOptions.Value;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
@@ -80,3 +80,19 @@ public class ReportCycleAudit(
     }
 }
 
+/// <summary>One report cycle, as written to the cycle audit log.</summary>
+public sealed record ReportCycleAuditEntry(
+    string CycleId,
+    string Trigger,
+    DateOnly RunDateWat,
+    DateTimeOffset CycleStartWat,
+    string SlotLabel,
+    string FacilityName,
+    string DatimId,
+    string State,
+    bool AuthPassed,
+    bool Success,
+    int TotalRows,
+    string UploadUrl,
+    string Error,
+    long DurationMs);

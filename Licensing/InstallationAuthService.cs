@@ -18,7 +18,7 @@ public class InstallationAuthService(
     IDatabaseService database,
     IHttpClientFactory httpClientFactory,
     IHostEnvironment hostEnvironment,
-    ILogger<InstallationAuthService> logger) : IAuthService
+    ILogger<InstallationAuthService> logger)
 {
     private enum VerificationOutcome
     {

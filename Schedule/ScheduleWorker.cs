@@ -10,7 +10,7 @@ namespace AHNiRSE.Schedule;
 /// </summary>
 public sealed class ScheduleWorker(
     ReportOrchestrator orchestrator,
-    IAuthService auth,
+    InstallationAuthService auth,
     IOptions<ReportSettings> options,
     ILogger<ScheduleWorker> logger) : RestartingWorker(logger)
 {
