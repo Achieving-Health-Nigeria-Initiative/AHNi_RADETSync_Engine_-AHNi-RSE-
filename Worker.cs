@@ -27,56 +27,6 @@ public class Worker(
     // False until the job table is checked and this machine's interrupted jobs are released.
     private bool _backfillReady;
 
- #if false
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        TimeZoneInfo timeZone;
-        List<ScheduleEntry> schedules;
-
-        try
-        {
-            timeZone = ResolveTimeZone(_reportSettings.TimeZoneId);
-            schedules = ResolveSchedules();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "[Worker] Failed to initialize scheduling. Service will stop.");
-            return;
-        }
-
-        // Ensure heartbeat table exists before loops start
-        if (heartbeat is AzureHeartbeatService azureHb)
-            await azureHb.EnsureTableExistsAsync(stoppingToken);
-
-        // ── Pre-load facility identity so the first heartbeat ping has real data ──
-        // If this fails or returns no identity, PingAsync will skip safely until
-        // ReportOrchestrator populates FacilityRunState after the first report cycle.
-        await LoadFacilityIdentityAsync(stoppingToken);
-
-        logger.LogInformation(
-            "[Worker] Started. TimeZone='{TimeZone}', RunOnStartup={RunOnStartup}, " +
-            "HeartbeatInterval={Interval}min, IdentityReady={IdentityReady}",
-            timeZone.Id, _reportSettings.RunOnStartup,
-            _heartbeatSettings.IntervalMinutes, state.HasIdentity);
-
-        // ── Two fully independent loops — neither awaits the other ────────────
-        var heartbeatLoop = RunHeartbeatLoopAsync(stoppingToken);
-        var reportLoop = RunReportLoopAsync(timeZone, schedules, stoppingToken);
-
-        await Task.WhenAll(heartbeatLoop, reportLoop);
-
-        logger.LogInformation("[Worker] Both loops stopped. Service shutting down.");
-    }
-
-    // ── STARTUP IDENTITY LOAD ─────────────────────────────────────────────────
-    // Runs once before the loops start. Loads facility name + DatimId from the
-    // orchestrator so the very first heartbeat ping uses the real PartitionKey
-    // instead of writing a blank DESKTOP-XXXX row to Azure Table Storage.
-    //
-    // If it fails for any reason (DB offline, config missing, etc.) the service
-    // still starts — PingAsync guards on HasIdentity and skips safely until the
-    // first report cycle populates FacilityRunState via ReportOrchestrator.
- #endif
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

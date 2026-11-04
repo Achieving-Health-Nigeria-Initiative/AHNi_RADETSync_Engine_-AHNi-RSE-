@@ -197,6 +197,16 @@ dotnet build
 dotnet run --project .\AHNi-RSE.csproj
 ```
 
+To produce one RADET workbook without installing the service or uploading anything, use
+`tools/LocalRun`: it downloads the SQL from blob storage, runs it against a local LAMISPlus database
+and saves the workbook to a folder (add an as-of date to run it as a force backfill):
+
+```powershell
+dotnet run --project .	ools\LocalRun -- C:\pathppsettings.json C:\path\secrets.json numan C:\RseOut 2026-09-30
+```
+
+`secrets.json` holds only `{ "ConnectionStrings": { "AzureBlobStorage": "..." } }`; keep it out of git.
+
 ## Publish
 
 Example self-contained publish:
