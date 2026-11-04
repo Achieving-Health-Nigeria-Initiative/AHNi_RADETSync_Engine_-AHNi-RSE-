@@ -7,17 +7,39 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 3. Builds Excel workbooks
 4. Uploads reports to Azure Blob
 5. Sends heartbeat status so BayCentral can track facility online/offline state
+6. Runs the RADET backfills requested in BayCentral (Force Backfill)
+
+## Project Layout
+
+Code is grouped by what the service does; each folder is one namespace (`AHNiRSE.<Folder>`), and
+`GlobalUsings.cs` imports them all.
+
+| Folder | What it holds |
+|---|---|
+| `Program.cs` | Startup: logging, settings, service registration, blob health check |
+| `Configuration/` | Every settings class (`Settings.cs`), bound from `appsettings.json` |
+| `Reports/` | The RADET workbook: `RadetWorkbook` (build + upload), `ReportOrchestrator` (one scheduled cycle or backfill: registration check, timeout, audit, Last RADET), `ReportScripts` (which blob holds each sheet's SQL), `ReportPeriods` (each sheet's dates), `CycleContext` |
+| `Reports/Sheets/` | Row models, mappers and header lists of the seven sheets |
+| `Schedule/` | `ScheduleWorker` (startup cycle, then cron cycles) and `CronSchedule` |
+| `Backfill/` | `BackfillWorker` and `ForceBackfillJobStore` (the `ForceBackfillJobs` table) |
+| `Heartbeat/` | `HeartbeatWorker`, `AzureHeartbeatService` (the `FacilityHeartbeat` row), `FacilityRunState` |
+| `Licensing/` | The verify-serial registration check: `InstallationAuthService`, `DeviceIdentity`, `AuthResultCache`, `VerifySerialClient` |
+| `Platform/` | Postgres, blob storage, Excel writer, WAT clock, memory release, health check, cycle audit, `RestartingWorker` |
+| `deploy/` | `Install.bat`, `Deploy-AHNi-RSEService.ps1` (published next to the exe), `Sync-Time.ps1` |
+| `docs/` | Background material |
+| `tools/LocalRun/` | Runs one workbook against a local database, saved to a folder (see Local Development) |
+
+Interfaces exist only where a test or tool swaps the implementation: `IDatabaseService`,
+`IStorageProvider`, `IReportClock`.
 
 ## Current Runtime Design
 
 ### 1) Service supervision and resilience
 
 - `Program.cs` starts the host even if startup Azure blob health check fails (warning only).
-- `Worker` runs under a supervisor loop:
-  - Initializes schedule/timezone
-  - Starts heartbeat loop and report loop
-  - If one loop exits unexpectedly, both loops are restarted after a short delay
-  - Schedule initialization failures are retried (service does not stop permanently)
+- Three independent background services: `HeartbeatWorker`, `ScheduleWorker` and `BackfillWorker`.
+  Each derives from `RestartingWorker`, which restarts its loop 15 seconds after it fails or exits,
+  so one loop failing never stops the others (invalid cron settings are retried the same way).
 
 ### 2) Heartbeat and report loops are independent
 
@@ -37,10 +59,9 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 
 ### 4) Parallel execution
 
-- `ScriptManager` supports bounded parallel script execution using:
-  - `Reports:MaxParallelScripts` (default 1)
-- `RadetReportScript` runs non-fatal sheet queries in parallel:
+- `RadetWorkbook` runs the non-fatal sheet queries in parallel with RADET:
   - HTS, Index, PMTCT HTS, Maternal, Prep, AHD
+- The workbook runs within the RADET entry's `TimeoutSeconds` (else `Reports:DefaultScriptTimeoutSeconds`).
 - RADET query remains fatal anchor query.
 - Non-fatal query failure produces empty sheet, not full cycle failure.
 
@@ -50,7 +71,7 @@ Superadmins request backfills in BayCentral (Administration → Force Backfill).
 per facility per as-of date to the `ForceBackfillJobs` table (same storage account as the heartbeat):
 PartitionKey = DatimId, RowKey = `<RequestId>_<yyyy-MM-dd>`. A date range is one row per day.
 
-- A third loop checks this facility's `pending` rows every `ForceBackfill:PollMinutes` (default 5),
+- `BackfillWorker` checks this facility's `pending` rows every `ForceBackfill:PollMinutes` (default 5),
   oldest request first, and runs them one at a time.
 - A job is claimed by setting it `running` with an ETag-conditional update; if BayCentral cancelled it
   or another PC with the same DatimId claimed it first, Azure refuses (412) and the job is skipped.
@@ -68,7 +89,7 @@ PartitionKey = DatimId, RowKey = `<RequestId>_<yyyy-MM-dd>`. A date range is one
 
 ## Report Output
 
-`RadetReportScript` generates one workbook with these sheets:
+`RadetWorkbook` generates one workbook with these sheets:
 
 | Sheet | Reports:Scripts entry | SQL blob (`autoreport` container) |
 |---|---|---|
@@ -181,7 +202,6 @@ Important keys:
 - `Reports:TimeZoneId` (recommended: `Africa/Lagos`)
 - `Reports:GlobalCycleTimeoutSeconds`
 - `Reports:DefaultScriptTimeoutSeconds`
-- `Reports:MaxParallelScripts`
 - `Heartbeat:IntervalMinutes`
 - `Heartbeat:OfflineThresholdMinutes`
 - `ForceBackfill:Enabled`, `ForceBackfill:PollMinutes`, `ForceBackfill:RunAlongsideSchedule`, `ForceBackfill:MaxAttempts`
