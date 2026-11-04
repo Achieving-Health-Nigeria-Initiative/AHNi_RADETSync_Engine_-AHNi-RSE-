@@ -115,6 +115,9 @@ try
                                | System.Net.DecompressionMethods.Deflate
                                | System.Net.DecompressionMethods.Brotli
     });
+    builder.Services.AddSingleton<DeviceIdentity>();
+    builder.Services.AddSingleton<AuthResultCache>();
+    builder.Services.AddSingleton<VerifySerialClient>();
     builder.Services.AddSingleton<InstallationAuthService>();
     builder.Services.AddSingleton<ReportCycleAudit>();
 
