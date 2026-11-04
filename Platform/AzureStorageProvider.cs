@@ -141,6 +141,9 @@ public class AzureStorageProvider(
         var blobPrefix = ResolveBlobFolder(_cfg.BlobPrefixes, reportType);
         var blobName = string.IsNullOrEmpty(blobPrefix) ? fileName : $"{blobPrefix}/{fileName}";
 
+        if (!string.IsNullOrWhiteSpace(_cfg.LocalUploadFolder))
+            return SaveToLocalFolder(localFilePath, blobName);
+
         var container = blobClient.GetBlobContainerClient(_cfg.ContainerName);
         var blob = container.GetBlobClient(blobName);
         var fileSizeBytes = new FileInfo(localFilePath).Length;
@@ -215,6 +218,22 @@ public class AzureStorageProvider(
         }
 
         throw new StorageException($"Azure upload failed after {maxAttempts} attempt(s) for blob '{blobName}'.");
+    }
+
+    /// <summary>
+    /// Testing only (Storage:Azure:LocalUploadFolder): copies the workbook to
+    /// &lt;folder&gt;\&lt;ContainerName&gt;\&lt;blob path&gt; instead of uploading it, so a local run never
+    /// replaces a facility's real report. The time is this PC's, not Azure's.
+    /// </summary>
+    private (string Url, DateTimeOffset UploadedAt) SaveToLocalFolder(string localFilePath, string blobName)
+    {
+        var dest = Path.GetFullPath(Path.Combine(
+            _cfg.LocalUploadFolder, _cfg.ContainerName, blobName.Replace('/', Path.DirectorySeparatorChar)));
+        Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+        File.Copy(localFilePath, dest, overwrite: true);
+
+        logger.LogWarning("[AzureStorage] LOCAL TEST MODE - saved to {Path} instead of uploading.", dest);
+        return (new Uri(dest).AbsoluteUri, DateTimeOffset.UtcNow);
     }
 
     private string ResolveStagingScriptPath(string scriptContainerName, string sourcePath)

@@ -26,14 +26,17 @@ public sealed class ForceBackfillJobStore
     private readonly ILogger<ForceBackfillJobStore> _logger;
     private readonly string _machineName = Environment.MachineName;
     private readonly string _appVersion;
+    private readonly string _containerName;
 
     public ForceBackfillJobStore(
         TableServiceClient tableService,
         IOptions<ForceBackfillSettings> options,
-        ILogger<ForceBackfillJobStore> logger)
+        ILogger<ForceBackfillJobStore> logger,
+        IOptions<StorageSettings>? storage = null)
     {
         _cfg = options.Value;
         _logger = logger;
+        _containerName = storage?.Value.Azure.ContainerName is { Length: > 0 } c ? c : "autoreport";
         _table = tableService.GetTableClient(_cfg.TableName);
         _appVersion = typeof(ForceBackfillJobStore).Assembly.GetName().Version?.ToString() ?? "unknown";
     }
@@ -212,12 +215,15 @@ public sealed class ForceBackfillJobStore
     }
 
     // https://<account>.blob.core.windows.net/<container>/RADET/2026-09-30/x.xlsx -> RADET/2026-09-30/x.xlsx
-    private static string BlobPathOf(string uploadUrl)
+    // (also file:///C:/<local folder>/<container>/RADET/... from Storage:Azure:LocalUploadFolder)
+    private string BlobPathOf(string uploadUrl)
     {
         if (!Uri.TryCreate(uploadUrl, UriKind.Absolute, out var uri))
             return string.Empty;
 
-        var segments = uri.AbsolutePath.TrimStart('/').Split('/');
-        return Uri.UnescapeDataString(string.Join('/', segments.Skip(1)));
+        var path = Uri.UnescapeDataString(uri.AbsolutePath);
+        var marker = $"/{_containerName}/";
+        var at = path.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+        return at < 0 ? string.Empty : path[(at + marker.Length)..];
     }
 }

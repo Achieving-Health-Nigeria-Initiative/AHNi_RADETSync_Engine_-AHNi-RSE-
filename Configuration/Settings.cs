@@ -16,6 +16,13 @@ public class AzureStorageOptions
     public int DownloadRetryDelaySeconds { get; set; } = 5;
     public int DownloadTimeoutSeconds { get; set; } = 300;
     public string TempDownloadPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Testing only. When set, finished workbooks are copied to
+    /// &lt;LocalUploadFolder&gt;\&lt;ContainerName&gt;\RADET\&lt;date&gt;\... instead of being uploaded.
+    /// Leave empty on every facility.
+    /// </summary>
+    public string LocalUploadFolder { get; set; } = string.Empty;
 }
 
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
