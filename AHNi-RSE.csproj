@@ -34,6 +34,7 @@
 
     <!-- ClosedXML — writes the RADET workbook. -->
     <PackageReference Include="ClosedXML" Version="0.102.2" />
+    <PackageReference Include="Parquet.Net" Version="5.6.1" />
     <PackageReference Include="Serilog" Version="4.3.1" />
     <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
@@ -55,6 +56,9 @@
   <ItemGroup>
     <Compile Remove="tools\**\*.cs" />
     <Compile Remove="Tools\**\*.cs" />
+    <!-- Nor their files (e.g. a tool's bin\*.json), which would otherwise be copied into this build and publish. -->
+    <Content Remove="tools\**;Tools\**" />
+    <None Remove="tools\**;Tools\**" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,6 +13,9 @@ public class PostgresService(
     IOptions<DatabaseSettings> options,
     ILogger<PostgresService> logger) : IDatabaseService
 {
+    /// <summary>DataColumn.ExtendedProperties key holding the column's PostgreSQL type name.</summary>
+    public const string PgTypeKey = "PgType";
+
     private readonly DatabaseSettings _cfg = options.Value;
 
     // ── PARAMETERLESS SQL ─────────────────────────────────────────────────────
@@ -226,8 +229,16 @@ public class PostgresService(
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
+        // PostgreSQL type of each column (date, timestamp, numeric...), which DataTable does not keep:
+        // it shows date and timestamp both as DateTime. Used to type the raw report Parquet files.
+        var pgTypes = Enumerable.Range(0, reader.FieldCount).Select(reader.GetDataTypeName).ToArray();
         var table = new DataTable();
         table.Load(reader);
+        if (table.Columns.Count == pgTypes.Length)
+        {
+            for (var i = 0; i < pgTypes.Length; i++)
+                table.Columns[i].ExtendedProperties[PgTypeKey] = pgTypes[i];
+        }
 
         sw.Stop();
         logger.LogInformation(

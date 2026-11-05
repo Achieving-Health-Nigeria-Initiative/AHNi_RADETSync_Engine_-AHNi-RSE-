@@ -6,7 +6,24 @@ using Microsoft.Extensions.Options;
 namespace AHNiRSE.Backfill;
 
 /// <summary>A force backfill job claimed by this machine.</summary>
-public sealed record ForceBackfillJob(string DatimId, string RowKey, string RequestId, DateOnly AsOfDate, int Attempts);
+public sealed record ForceBackfillJob(
+    string DatimId, string RowKey, string RequestId, DateOnly AsOfDate, int Attempts,
+    string ReportType = BackfillReportType.Default);
+
+/// <summary>What a force backfill job produces (the job row's ReportType; empty means default).</summary>
+public static class BackfillReportType
+{
+    /// <summary>The RADET workbook, uploaded to RADET/&lt;date&gt;/ (replaces that date's file).</summary>
+    public const string Default = "default";
+
+    /// <summary>The scripts' raw results as Parquet files in raw-report/&lt;date&gt;/ (see RawReport).</summary>
+    public const string Raw = "raw";
+
+    public static bool IsKnown(string type) => type is Default or Raw;
+
+    public static string Normalize(string? type) =>
+        string.IsNullOrWhiteSpace(type) ? Default : type.Trim().ToLowerInvariant();
+}
 
 /// <summary>
 /// Reads and updates this facility's rows in the ForceBackfillJobs table, which BayCentral fills
@@ -15,6 +32,7 @@ public sealed record ForceBackfillJob(string DatimId, string RowKey, string Requ
 /// TABLE LAYOUT (shared with BayCentral):
 ///   PartitionKey = DatimId, RowKey = "{RequestId}_{yyyy-MM-dd}"
 ///   Status: pending → running → uploaded | failed   (BayCentral may also set cancelled, or reset to pending)
+///   ReportType: default (or empty) | raw - a type this RSE does not know fails without running
 ///
 /// CLAIMING: a pending job is set to running with an ETag-conditional update. If BayCentral cancelled
 /// it, or another machine with the same DatimId claimed it first, Azure answers 412 and the job is skipped.
@@ -126,6 +144,23 @@ public sealed class ForceBackfillJobStore
             if (attempts >= _cfg.MaxAttempts)
                 continue;
 
+            var reportType = BackfillReportType.Normalize(job.GetString("ReportType"));
+            if (!BackfillReportType.IsKnown(reportType))
+            {
+                _logger.LogWarning(
+                    "[Backfill] Job {Job} asks for report type '{Type}', which this RSE does not support - marked failed.",
+                    job.RowKey, reportType);
+                await TryUpdateAsync(job.PartitionKey, job.RowKey, new()
+                {
+                    ["Status"] = "failed",
+                    ["Error"] = $"Report type '{reportType}' is not supported by this RSE (version {_appVersion}) - update the RSE",
+                    ["CompletedAt"] = DateTimeOffset.UtcNow,
+                    ["MachineName"] = _machineName,
+                    ["AppVersion"] = _appVersion,
+                }, ct);
+                continue;
+            }
+
             if (!DateOnly.TryParseExact(job.GetString("AsOfDate"), "yyyy-MM-dd", out var asOfDate))
             {
                 await TryUpdateAsync(job.PartitionKey, job.RowKey, new()
@@ -151,7 +186,8 @@ public sealed class ForceBackfillJobStore
             {
                 await _table.UpdateEntityAsync(claim, job.ETag, TableUpdateMode.Merge, ct);
                 return new ForceBackfillJob(
-                    job.PartitionKey, job.RowKey, job.GetString("RequestId") ?? string.Empty, asOfDate, attempts + 1);
+                    job.PartitionKey, job.RowKey, job.GetString("RequestId") ?? string.Empty, asOfDate, attempts + 1,
+                    reportType);
             }
             catch (RequestFailedException ex) when (ex.Status == 412)
             {
@@ -162,17 +198,22 @@ public sealed class ForceBackfillJobStore
         return null;
     }
 
-    public Task CompleteAsync(
-        ForceBackfillJob job, DateTimeOffset uploadedAt, int rows, string uploadUrl, CancellationToken ct = default)
+    /// <summary>
+    /// Marks the job uploaded. Rows is the RADET row count; UploadUrl/BlobPath are the workbook, or the
+    /// raw report's manifest; Files lists every blob the job uploaded (JSON array of paths in Container).
+    /// </summary>
+    public Task CompleteAsync(ForceBackfillJob job, BackfillResult result, CancellationToken ct = default)
         => TryUpdateAsync(job.DatimId, job.RowKey, new()
         {
             ["Status"] = "uploaded",
             ["CompletedAt"] = DateTimeOffset.UtcNow,
-            ["UploadedAt"] = uploadedAt,
-            ["Rows"] = rows,
-            ["UploadUrl"] = uploadUrl,
-            ["BlobPath"] = BlobPathOf(uploadUrl),
+            ["UploadedAt"] = result.UploadedAt,
+            ["Rows"] = result.Rows,
+            ["UploadUrl"] = result.Url,
+            ["BlobPath"] = BlobPathOf(result.Url),
             ["Container"] = ContainerName,
+            ["Files"] = System.Text.Json.JsonSerializer.Serialize(
+                result.Files.Count > 0 ? result.Files : [BlobPathOf(result.Url)]),
             ["Error"] = string.Empty,
         }, ct);
 

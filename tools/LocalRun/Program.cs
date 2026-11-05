@@ -10,18 +10,19 @@ using Microsoft.Extensions.Options;
 // data from a local LAMISPlus database, and the workbook saved to a local folder instead of uploaded,
 // under a folder named after the container it would go to (autoreport or community-center).
 //
-//   dotnet run --project tools/LocalRun -- <appsettings.json> <secrets.json> <database> <output folder> [as-of date]
+//   dotnet run --project tools/LocalRun -- <appsettings.json> <secrets.json> <database> <output folder> [as-of date] [raw]
 //
 //   appsettings.json  the service's settings (Reports, Storage, ...)
 //   secrets.json      { "ConnectionStrings": { "AzureBlobStorage": "..." } } - keep it out of git
 //   database          local database name (user postgres on localhost:5432; set its password in the
 //                     LOCALRUN_DB_PASSWORD environment variable first)
 //   as-of date        yyyy-MM-dd: run as a force backfill for that date instead of today
+//   raw               with an as-of date: the raw report (Parquet files in raw-report\<date>\) instead of the workbook
 //
 // Absolute paths are safest: configuration files resolve against the tool's build folder.
 if (args.Length < 4)
 {
-    Console.Error.WriteLine("usage: <appsettings.json> <secrets.json> <database> <output folder> [as-of date]");
+    Console.Error.WriteLine("usage: <appsettings.json> <secrets.json> <database> <output folder> [as-of date] [raw]");
     return 1;
 }
 
@@ -65,6 +66,16 @@ var context = new CycleContext(asOf, asOf, "local-" + DateTime.Now.ToString("HHm
     backfill ? "ForceBackfill:local" : "LocalRun", Backfill: backfill);
 
 var sw = System.Diagnostics.Stopwatch.StartNew();
+if (backfill && args.Length > 5 && args[5].Equals("raw", StringComparison.OrdinalIgnoreCase))
+{
+    var raw = new RawReport(new ReportScripts(output, Options.Create(reports)), output, database, profile,
+        lf.CreateLogger<RawReport>());
+    var result = await raw.RunAsync(context);
+    Console.WriteLine($"DONE raw report, {result.RadetRows:N0} RADET rows in {sw.Elapsed.TotalMinutes:F1} min -> {result.ManifestUrl}");
+    foreach (var file in result.Files)
+        Console.WriteLine($"  {file}");
+    return 0;
+}
 var (rows, path, _) = await workbook.RunAsync(context);
 Console.WriteLine($"DONE {rows:N0} RADET rows in {sw.Elapsed.TotalMinutes:F1} min -> {path}");
 return 0;

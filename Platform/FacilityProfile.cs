@@ -44,6 +44,25 @@ public sealed class FacilityProfile(
         ? _reports.CareFileNameFormat
         : _reports.FileNameFormat;
 
+    /// <summary>
+    /// The file name, without extension, for this facility and date: FileNameFormat with {facility},
+    /// {datim} and {date} (yyyy_MM_dd) filled in, e.g. Numan_General_Hospital_2026_11_05.
+    /// </summary>
+    public string BaseFileName(Facility facility, DateOnly date)
+    {
+        var format = string.IsNullOrWhiteSpace(FileNameFormat) ? "{facility}_{date}" : FileNameFormat;
+        return format
+            .Replace("{facility}", SanitizeName(facility.FacilityName), StringComparison.OrdinalIgnoreCase)
+            .Replace("{datim}", SanitizeName(facility.DatimId), StringComparison.OrdinalIgnoreCase)
+            .Replace("{date}", date.ToString("yyyy_MM_dd"), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string SanitizeName(string name) =>
+        string.IsNullOrWhiteSpace(name)
+            ? "UnknownFacility"
+            : string.Concat(name.Trim().Select(c =>
+                Path.GetInvalidFileNameChars().Contains(c) || c == ' ' ? '_' : c));
+
     /// <summary>Works out the type on first use after a start; later calls return at once.</summary>
     public async Task EnsureResolvedAsync(CancellationToken ct = default)
     {

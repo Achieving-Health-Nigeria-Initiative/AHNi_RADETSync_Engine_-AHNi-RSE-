@@ -7,7 +7,8 @@ AHNi RADETSync Engine (AHNi-RSE) is a .NET Windows Worker Service that:
 3. Builds Excel workbooks
 4. Uploads reports to Azure Blob
 5. Sends heartbeat status so BayCentral can track facility online/offline state
-6. Runs the RADET backfills requested in BayCentral (Force Backfill)
+6. Runs the RADET backfills requested in BayCentral (Force Backfill), as the workbook or as raw
+   query results (Parquet) for a separate combiner
 
 ## Project Layout
 
@@ -18,16 +19,16 @@ Code is grouped by what the service does; each folder is one namespace (`AHNiRSE
 |---|---|
 | `Program.cs` | Startup: logging, settings, service registration, blob health check |
 | `Configuration/` | Every settings class (`Settings.cs`), bound from `appsettings.json` |
-| `Reports/` | The RADET workbook: `RadetWorkbook` (build + upload), `ReportOrchestrator` (one scheduled cycle or backfill: registration check, timeout, audit, Last RADET), `ReportScripts` (which blob holds each sheet's SQL), `ReportPeriods` (each sheet's dates), `CycleContext` |
+| `Reports/` | The RADET workbook: `RadetWorkbook` (build + upload), `RawReport` (raw-type backfills: the same scripts' results as Parquet), `ReportOrchestrator` (one scheduled cycle or backfill: registration check, timeout, audit, Last RADET), `ReportScripts` (which blob holds each sheet's SQL), `ReportPeriods` (each sheet's dates), `CycleContext` |
 | `Reports/Sheets/` | Row models, mappers and header lists of the seven sheets |
 | `Schedule/` | `ScheduleWorker` (startup cycle, then cron cycles) and `CronSchedule` |
 | `Backfill/` | `BackfillWorker` and `ForceBackfillJobStore` (the `ForceBackfillJobs` table) |
 | `Heartbeat/` | `HeartbeatWorker`, `AzureHeartbeatService` (the `FacilityHeartbeat` row), `FacilityRunState` |
 | `Licensing/` | The verify-serial registration check: `InstallationAuthService`, `DeviceIdentity`, `AuthResultCache`, `VerifySerialClient` |
-| `Platform/` | Postgres, blob storage, Excel writer, WAT clock, memory release, health check, cycle audit, `RestartingWorker` |
+| `Platform/` | Postgres, blob storage, Excel writer, Parquet writer (`ParquetExport`), WAT clock, memory release, health check, cycle audit, `RestartingWorker` |
 | `deploy/` | `Install.bat`, `Deploy-AHNi-RSEService.ps1` (published next to the exe), `Sync-Time.ps1` |
 | `docs/` | Background material |
-| `tools/LocalRun/` | Runs one workbook against a local database, saved to a folder (see Local Development) |
+| `tools/LocalRun/` | Runs one workbook (or raw report) against a local database, saved to a folder (see Local Development) |
 
 Interfaces exist only where a test or tool swaps the implementation: `IDatabaseService`,
 `IStorageProvider`, `IReportClock`.
@@ -84,6 +85,10 @@ PartitionKey = DatimId, RowKey = `<RequestId>_<yyyy-MM-dd>`. A date range is one
 - It runs alongside a scheduled cycle, except a backfill for today's date (same file) or when
   `ForceBackfill:RunAlongsideSchedule` is false; then it takes the cycle lock, and a scheduled cycle that
   comes due waits for it instead of being skipped.
+- The job's `ReportType` picks what it produces: `default` (or empty) is the workbook above; `raw` is
+  the raw report (next section). A type this RSE does not know is marked `failed` without running
+  ("not supported by this RSE ... update the RSE"), so an old install never mistakes a new type for the
+  workbook. A raw job never takes the cycle lock for today's date, since it writes different files.
 - Each date is its own job with its own run limit (`Reports:GlobalCycleTimeoutSeconds`, 1 hour); a date
   range runs as one job per day, one after another.
 - Jobs this PC left `running` when the service stopped go back to `pending` at the next start, or to
@@ -92,6 +97,42 @@ PartitionKey = DatimId, RowKey = `<RequestId>_<yyyy-MM-dd>`. A date range is one
   picked up is released the same way, whichever PC took it: no live run lasts that long, so that PC
   was retired (for example after a database migration), renamed or died, and nothing else would
   free the job.
+
+### 6) Raw report (force backfill, report type `raw`)
+
+Only produced when a superadmin requests a backfill of type `raw` in BayCentral - never by the scheduled
+cycles. `RawReport` runs the same seven scripts as the workbook (downloaded from `report-script/` in
+blob storage), with the same parameters as a workbook backfill for that date, and uploads each result
+exactly as the query returned it - same column names and order, no header mapping, no value changes -
+as a Parquet file. A separate combiner downloads them, maps the headers and formats, and merges them.
+
+```
+<container>/raw-report/<yyyy-MM-dd>/<base>_RADET.parquet
+                                   <base>_HTS.parquet
+                                   <base>_Index.parquet
+                                   <base>_PMTCT_HTS.parquet
+                                   <base>_Maternal_Cohort.parquet
+                                   <base>_Prep.parquet
+                                   <base>_AHD.parquet
+                                   <base>_manifest.json      (uploaded last)
+```
+
+- `<base>` and `<container>` are the workbook's: `Numan_General_Hospital_2026_11_02` in `autoreport`,
+  `Jalingo_Community_Center_cmkm8UQpvWk_2026_11_02` in `community-center` (see Community centres).
+- Column types come from the PostgreSQL type of each result column, not from the values: `date` ->
+  DATE, `timestamp`/`timestamptz` -> timestamp, `smallint`/`integer`/`bigint` -> int16/32/64,
+  `numeric`/`real`/`double precision` -> double, `boolean` -> boolean, everything else (text, uuid,
+  time, arrays...) -> string. Every column is nullable; a report with no rows still has all its columns.
+- Each file's footer metadata holds `report`, `script`, `facility`, `datim_id`, `state`, `as_of_date`,
+  `start_date`, `end_date` and `pg_types` (the PostgreSQL type of every column).
+- The manifest lists the facility, type, container, as-of date, job, RSE version and, per report, the
+  script, file, rows, columns and period. It goes up after every Parquet file, so a manifest means
+  the set is complete.
+- All or nothing: if any enabled script fails, nothing is uploaded and the job fails naming the
+  report(s) and error. A script with `Enabled=false` is skipped and listed as `enabled: false`.
+- The job row gets `Rows` (RADET), `BlobPath` (the manifest) and `Files` (JSON array of every path).
+- When reading the files with pandas, text such as `None` (an Education value in LAMISPlus) is data,
+  not a missing value; Parquet keeps it as text, but `read_csv`/`read_excel` defaults would not.
 
 ## Report Output
 
@@ -225,10 +266,12 @@ dotnet run --project .\AHNi-RSE.csproj
 
 To produce one RADET workbook without installing the service or uploading anything, use
 `tools/LocalRun`: it downloads the SQL from blob storage, runs it against a local LAMISPlus database
-and saves the workbook to a folder (add an as-of date to run it as a force backfill):
+and saves the workbook to a folder (add an as-of date to run it as a force backfill, and `raw` after
+the date for the raw report's Parquet files instead):
 
 ```powershell
-dotnet run --project .	ools\LocalRun -- C:\pathppsettings.json C:\path\secrets.json numan C:\RseOut 2026-09-30
+dotnet run --project .\tools\LocalRun -- C:\path\appsettings.json C:\path\secrets.json numan C:\RseOut 2026-09-30
+dotnet run --project .\tools\LocalRun -- C:\path\appsettings.json C:\path\secrets.json numan C:\RseOut 2026-09-30 raw
 ```
 
 `secrets.json` holds only `{ "ConnectionStrings": { "AzureBlobStorage": "..." } }`; keep it out of git.

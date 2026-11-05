@@ -7,7 +7,8 @@ namespace AHNiRSE.Backfill;
 /// Runs the force backfills requested in BayCentral: every ForceBackfill:PollMinutes it claims this
 /// facility's pending jobs one at a time, oldest first, runs each through
 /// ReportOrchestrator.RunBackfillAsync (which decides whether it may overlap a scheduled cycle) and
-/// records the result on the job row.
+/// records the result on the job row. A job's ReportType picks what it produces: the RADET workbook
+/// (default) or the raw report (raw, see RawReport).
 ///
 /// Every poll also releases jobs left running by a machine that never came back (see
 /// ForceBackfillJobStore.ReleaseAbandonedAsync), so a job taken by a retired or renamed PC is not
@@ -74,13 +75,13 @@ public sealed class BackfillWorker(
             while (!ct.IsCancellationRequested && await jobs.TryClaimNextAsync(datimId, ct) is { } job)
             {
                 logger.LogInformation(
-                    "[Backfill] Claimed job {Job} (as of {AsOf}, attempt {A}/{Max}).",
-                    job.RowKey, job.AsOfDate.ToString("yyyy-MM-dd"), job.Attempts, _settings.MaxAttempts);
+                    "[Backfill] Claimed job {Job} ({Type}, as of {AsOf}, attempt {A}/{Max}).",
+                    job.RowKey, job.ReportType, job.AsOfDate.ToString("yyyy-MM-dd"), job.Attempts, _settings.MaxAttempts);
 
                 try
                 {
-                    var (rows, url, uploadedAt) = await orchestrator.RunBackfillAsync(job.AsOfDate, job.RowKey, ct);
-                    await jobs.CompleteAsync(job, uploadedAt, rows, url, ct);
+                    var result = await orchestrator.RunBackfillAsync(job.AsOfDate, job.RowKey, job.ReportType, ct);
+                    await jobs.CompleteAsync(job, result, ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {

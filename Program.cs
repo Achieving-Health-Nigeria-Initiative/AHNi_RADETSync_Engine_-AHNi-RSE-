@@ -124,6 +124,7 @@ try
     builder.Services.AddSingleton<FacilityProfile>();
     builder.Services.AddSingleton<ReportScripts>();
     builder.Services.AddSingleton<RadetWorkbook>();
+    builder.Services.AddSingleton<RawReport>();   // force backfills of report type "raw" only
     builder.Services.AddSingleton<ReportOrchestrator>();
 
     // ── BACKGROUND LOOPS — independent; each restarts itself if it fails ───

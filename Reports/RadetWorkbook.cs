@@ -68,7 +68,7 @@ public sealed class RadetWorkbook(
             queryParameters.PreviousPreviousQuarterEnd.ToString("yyyy-MM-dd"));
 
         var facility = database.GetFacilityInfo();
-        var fileName = BuildFileName(facility, context.RunDate);
+        var fileName = profile.BaseFileName(facility, context.RunDate) + ".xlsx";
         var localOutput = Path.Combine(Path.GetTempPath(), "AHNi-RSE", context.CycleId, fileName);
         Directory.CreateDirectory(Path.GetDirectoryName(localOutput)!);
 
@@ -281,24 +281,4 @@ public sealed class RadetWorkbook(
         try { if (File.Exists(path)) File.Delete(path); }
         catch { /* non-fatal */ }
     }
-
-    /// <summary>
-    /// The facility's file name pattern (Reports:FileNameFormat, or CareFileNameFormat for a community
-    /// centre - see FacilityProfile) with {facility}, {datim} and {date} filled in.
-    /// </summary>
-    private string BuildFileName(Facility facility, DateOnly runDate)
-    {
-        var format = string.IsNullOrWhiteSpace(profile.FileNameFormat) ? "{facility}_{date}" : profile.FileNameFormat;
-        var name = format
-            .Replace("{facility}", SanitizeName(facility.FacilityName), StringComparison.OrdinalIgnoreCase)
-            .Replace("{datim}", SanitizeName(facility.DatimId), StringComparison.OrdinalIgnoreCase)
-            .Replace("{date}", runDate.ToString("yyyy_MM_dd"), StringComparison.OrdinalIgnoreCase);
-        return $"{name}.xlsx";
-    }
-
-    private static string SanitizeName(string name) =>
-        string.IsNullOrWhiteSpace(name)
-            ? "UnknownFacility"
-            : string.Concat(name.Trim().Select(c =>
-                Path.GetInvalidFileNameChars().Contains(c) || c == ' ' ? '_' : c));
 }

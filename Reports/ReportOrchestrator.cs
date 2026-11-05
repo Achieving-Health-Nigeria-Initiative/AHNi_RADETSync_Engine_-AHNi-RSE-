@@ -5,6 +5,12 @@ using Microsoft.Extensions.Options;
 namespace AHNiRSE.Reports;
 
 /// <summary>
+/// What a force backfill uploaded: RADET rows, the workbook (or raw report manifest) URL, Azure's upload
+/// time and every blob path it wrote (empty for the workbook, which is just the URL).
+/// </summary>
+public sealed record BackfillResult(int Rows, string Url, DateTimeOffset UploadedAt, IReadOnlyList<string> Files);
+
+/// <summary>
 /// Runs the RADET workbook for a scheduled cycle (RunAsync) or a force backfill (RunBackfillAsync):
 /// registration check, the workbook within its timeout, the cycle audit and, for scheduled cycles,
 /// the heartbeat's Last RADET / error.
@@ -15,6 +21,7 @@ namespace AHNiRSE.Reports;
 public class ReportOrchestrator(
     InstallationAuthService auth,
     RadetWorkbook workbook,
+    RawReport rawReport,
     ReportScripts scripts,
     AzureHeartbeatService heartbeat,
     IDatabaseService database,
@@ -126,20 +133,23 @@ public class ReportOrchestrator(
     }
 
     /// <summary>
-    /// Runs one force backfill: the RADET workbook as of <paramref name="asOfDate"/>, uploaded to
-    /// RADET/&lt;asOfDate&gt;/. It never touches the heartbeat (Last RADET, Status). Throws when nothing
-    /// was uploaded, so the caller can mark the job failed.
+    /// Runs one force backfill as of <paramref name="asOfDate"/>: the RADET workbook, uploaded to
+    /// RADET/&lt;asOfDate&gt;/ (report type default), or the raw report, uploaded to raw-report/&lt;asOfDate&gt;/
+    /// (report type raw). It never touches the heartbeat (Last RADET, Status). Throws when nothing was
+    /// uploaded, so the caller can mark the job failed.
     ///
-    /// It runs alongside a scheduled cycle unless ForceBackfill:RunAlongsideSchedule is false or the
-    /// date is today (both would write the same file); then it takes the cycle lock, and a scheduled
+    /// It runs alongside a scheduled cycle unless ForceBackfill:RunAlongsideSchedule is false, or it is a
+    /// workbook for today (both would write the same file); then it takes the cycle lock, and a scheduled
     /// cycle that comes due waits for it rather than being skipped.
     /// </summary>
-    public async Task<(int Rows, string UploadUrl, DateTimeOffset UploadedAt)> RunBackfillAsync(
+    public async Task<BackfillResult> RunBackfillAsync(
         DateOnly asOfDate,
         string jobId,
+        string reportType = BackfillReportType.Default,
         CancellationToken ct = default)
     {
-        var holdCycleLock = !_backfill.RunAlongsideSchedule || asOfDate == clock.TodayInWat();
+        var raw = reportType == BackfillReportType.Raw;
+        var holdCycleLock = !_backfill.RunAlongsideSchedule || (!raw && asOfDate == clock.TodayInWat());
         if (holdCycleLock)
         {
             if (!await _cycleLock.WaitAsync(0, ct))
@@ -161,8 +171,8 @@ public class ReportOrchestrator(
         var error = string.Empty;
 
         logger.LogInformation(
-            "[Backfill] START | Job={Job} | CycleId={CycleId} | AsOf={AsOf} | AlongsideSchedule={Alongside}",
-            jobId, context.CycleId, asOfDate.ToString("yyyy-MM-dd"), !holdCycleLock);
+            "[Backfill] START | Job={Job} | Type={Type} | CycleId={CycleId} | AsOf={AsOf} | AlongsideSchedule={Alongside}",
+            jobId, reportType, context.CycleId, asOfDate.ToString("yyyy-MM-dd"), !holdCycleLock);
 
         try
         {
@@ -173,14 +183,23 @@ public class ReportOrchestrator(
                 throw new InvalidOperationException(AuthFailed);
             await profile.EnsureResolvedAsync(cts.Token);
 
-            var result = await RunWorkbookAsync(context, cts.Token, ct)
-                ?? throw new InvalidOperationException(NothingUploaded);
+            BackfillResult result;
+            if (raw)
+            {
+                result = await RunRawReportAsync(context, cts.Token);
+            }
+            else
+            {
+                var workbookResult = await RunWorkbookAsync(context, cts.Token, ct)
+                    ?? throw new InvalidOperationException(NothingUploaded);
+                result = new BackfillResult(workbookResult.Rows, workbookResult.Url, workbookResult.UploadedAt, []);
+            }
             (rows, url) = (result.Rows, result.Url);
 
             logger.LogInformation(
-                "[Backfill] COMPLETE | Job={Job} | AsOf={AsOf} | {Rows} rows | {Url} | {Ms}ms",
-                jobId, asOfDate.ToString("yyyy-MM-dd"), rows, url, sw.ElapsedMilliseconds);
-            return (rows, url, result.UploadedAt);
+                "[Backfill] COMPLETE | Job={Job} | Type={Type} | AsOf={AsOf} | {Rows} rows | {Url} | {Ms}ms",
+                jobId, reportType, asOfDate.ToString("yyyy-MM-dd"), rows, url, sw.ElapsedMilliseconds);
+            return result;
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
@@ -201,8 +220,33 @@ public class ReportOrchestrator(
             }
 
             await SafeRecordAuditAsync(
-                context, startWat, "backfill", facility, authPassed: error != AuthFailed,
+                context, startWat, raw ? "backfill-raw" : "backfill", facility, authPassed: error != AuthFailed,
                 rows, url, error, sw.ElapsedMilliseconds);
+        }
+    }
+
+    /// <summary>
+    /// The raw report within the RADET entry's TimeoutSeconds (or Reports:DefaultScriptTimeoutSeconds),
+    /// the same limit as the workbook. Throws with the reason when it fails or times out.
+    /// </summary>
+    private async Task<BackfillResult> RunRawReportAsync(CycleContext context, CancellationToken cycleToken)
+    {
+        var timeout = Math.Max(30, scripts.Find(ReportScripts.Radet)?.TimeoutSeconds ?? _settings.DefaultScriptTimeoutSeconds);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cycleToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(timeout));
+
+        try
+        {
+            var result = await rawReport.RunAsync(context, cts.Token);
+            return new BackfillResult(result.RadetRows, result.ManifestUrl, result.UploadedAt, result.Files);
+        }
+        catch (OperationCanceledException) when (!cycleToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Raw report timed out after {timeout}s");
+        }
+        finally
+        {
+            MemoryPressureHelper.ReleaseAfterCycle(logger);
         }
     }
 
