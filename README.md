@@ -77,7 +77,7 @@ PartitionKey = DatimId, RowKey = `<RequestId>_<yyyy-MM-dd>`. A date range is one
   or another PC with the same DatimId claimed it first, Azure refuses (412) and the job is skipped.
 - The run is the normal RADET workbook with the as-of date as "today": every sheet's `:end_date` is that
   date, start dates are the defaults (HTS: start of that fiscal year minus 3 months), and any
-  `StartDate`/`EndDate` in `Reports:Scripts` is ignored. It uploads to `RADET/<date>/<facility>_<datim>_<date>.xlsx`,
+  `StartDate`/`EndDate` in `Reports:Scripts` is ignored. It uploads to `RADET/<date>/<facility>_<date>.xlsx`,
   replacing that day's file.
 - The job row gets `uploaded` (with Azure's `UploadedAt`, `Rows`, `BlobPath`) or `failed` (with `Error`).
   A backfill never changes the heartbeat row (Last RADET, Status).
@@ -235,12 +235,10 @@ dotnet run --project .	ools\LocalRun -- C:\pathppsettings.json C:\path\secrets.
 
 ## Community centres
 
-Workbooks are named `<facility>_<DATIM ID>_<yyyy_MM_dd>.xlsx` (`Reports:FileNameFormat`,
-`{facility}_{datim}_{date}`), e.g. `Numan_General_Hospital_KXoSesiSLeE_2026_11_05.xlsx`, the same for
-gen-pop facilities and community centres. The community centres run the same service with one setting
-changed:
+The community centres run the same service with two settings changed:
 
 - `Storage:Azure:ContainerName`: `community-center`
+- `Reports:FileNameFormat`: `{facility}_{datim}_{date}` (their files carry the DATIM ID)
 
 Force backfills then upload there too, and the job records the container so BayCentral's download link
 points to it.
