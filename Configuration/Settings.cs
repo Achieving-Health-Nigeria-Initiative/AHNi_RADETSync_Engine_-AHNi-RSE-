@@ -118,6 +118,12 @@ public class ReportSettings
     public bool EnableCycleAudit { get; set; } = true;
     public string CycleAuditPath { get; set; } = string.Empty;
     public string TimeZoneId { get; set; } = "UTC";
+
+    /// <summary>
+    /// Workbook file name (without .xlsx). {facility} = facility name with spaces as underscores,
+    /// {datim} = DATIM ID, {date} = yyyy_MM_dd. Community centres use "{facility}_{datim}_{date}".
+    /// </summary>
+    public string FileNameFormat { get; set; } = "{facility}_{date}";
     public int GlobalCycleTimeoutSeconds { get; set; } = 3600;
     public int DefaultScriptTimeoutSeconds { get; set; } = 900;
 

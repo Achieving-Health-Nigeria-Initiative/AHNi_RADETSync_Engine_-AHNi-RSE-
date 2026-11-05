@@ -167,6 +167,7 @@ public sealed class ForceBackfillJobStore
             ["Rows"] = rows,
             ["UploadUrl"] = uploadUrl,
             ["BlobPath"] = BlobPathOf(uploadUrl),
+            ["Container"] = _containerName,
             ["Error"] = string.Empty,
         }, ct);
 

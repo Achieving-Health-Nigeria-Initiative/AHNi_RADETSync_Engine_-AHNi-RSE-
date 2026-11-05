@@ -233,7 +233,22 @@ dotnet run --project .	ools\LocalRun -- C:\pathppsettings.json C:\path\secrets.
 
 `secrets.json` holds only `{ "ConnectionStrings": { "AzureBlobStorage": "..." } }`; keep it out of git.
 
+## Community centres
+
+The community centres run the same service with two settings changed:
+
+- `Storage:Azure:ContainerName`: `community-center`
+- `Reports:FileNameFormat`: `{facility}_{datim}_{date}` (their files carry the DATIM ID)
+
+Force backfills then upload there too, and the job records the container so BayCentral's download link
+points to it.
+
 ## Publish
+
+Each build is stamped with its date and time as the version (e.g. `2026.11.5.1432`); the heartbeat and
+backfill jobs report it as `AppVersion`, so BayCentral shows which build each facility runs. Pass
+`-p:Version=...` to `dotnet publish` for a fixed number.
+
 
 Example self-contained publish:
 

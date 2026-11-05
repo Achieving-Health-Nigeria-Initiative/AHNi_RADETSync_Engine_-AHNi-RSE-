@@ -7,6 +7,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>AHNiRSE</RootNamespace>
     <AssemblyName>AHNiRSE</AssemblyName>
+    <!--
+      Build date and time (local), e.g. 2026.11.5.1432 for 14:32 on 5 Nov 2026. It is the AppVersion the
+      heartbeat and force backfill jobs report, so BayCentral shows which build each facility runs.
+      Override with  dotnet publish -p:Version=...  when a fixed number is needed.
+    -->
+    <Version>$([System.DateTime]::Now.ToString("yyyy.M.d.Hmm"))</Version>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">

@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace AHNiRSE.Reports;
 
@@ -32,6 +33,7 @@ public sealed class RadetWorkbook(
     IStorageProvider storage,
     IDatabaseService database,
     ExcelExporter exporter,
+    IOptions<ReportSettings> options,
     ILogger<RadetWorkbook> logger)
 {
     /// <summary>
@@ -67,7 +69,7 @@ public sealed class RadetWorkbook(
             queryParameters.PreviousPreviousQuarterEnd.ToString("yyyy-MM-dd"));
 
         var facility = database.GetFacilityInfo();
-        var fileName = $"{SanitizeName(facility.FacilityName)}_{context.RunDate:yyyy_MM_dd}.xlsx";
+        var fileName = BuildFileName(facility, context.RunDate);
         var localOutput = Path.Combine(Path.GetTempPath(), "AHNi-RSE", context.CycleId, fileName);
         Directory.CreateDirectory(Path.GetDirectoryName(localOutput)!);
 
@@ -279,6 +281,17 @@ public sealed class RadetWorkbook(
     {
         try { if (File.Exists(path)) File.Delete(path); }
         catch { /* non-fatal */ }
+    }
+
+    /// <summary>Reports:FileNameFormat with {facility}, {datim} and {date} filled in.</summary>
+    private string BuildFileName(Facility facility, DateOnly runDate)
+    {
+        var format = string.IsNullOrWhiteSpace(options.Value.FileNameFormat) ? "{facility}_{date}" : options.Value.FileNameFormat;
+        var name = format
+            .Replace("{facility}", SanitizeName(facility.FacilityName), StringComparison.OrdinalIgnoreCase)
+            .Replace("{datim}", SanitizeName(facility.DatimId), StringComparison.OrdinalIgnoreCase)
+            .Replace("{date}", runDate.ToString("yyyy_MM_dd"), StringComparison.OrdinalIgnoreCase);
+        return $"{name}.xlsx";
     }
 
     private static string SanitizeName(string name) =>

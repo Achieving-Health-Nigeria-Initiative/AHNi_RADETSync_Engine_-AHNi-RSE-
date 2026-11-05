@@ -49,6 +49,7 @@ var workbook = new RadetWorkbook(
     output,
     new PostgresService(Options.Create(db), lf.CreateLogger<PostgresService>()),
     new ExcelExporter(lf.CreateLogger<ExcelExporter>()),
+    Options.Create(reports),
     lf.CreateLogger<RadetWorkbook>());
 
 var backfill = args.Length > 4;
