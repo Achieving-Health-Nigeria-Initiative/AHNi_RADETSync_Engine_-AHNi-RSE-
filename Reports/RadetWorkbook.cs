@@ -6,7 +6,7 @@ namespace AHNiRSE.Reports;
 
 /// <summary>
 /// The RADET workbook – seven sheets, built from the LAMISPlus report module queries and uploaded to
-/// RADET/&lt;date&gt;/&lt;facility&gt;_&lt;date&gt;.xlsx.
+/// RADET/&lt;date&gt;/&lt;facility&gt;_&lt;DATIM ID&gt;_&lt;date&gt;.xlsx (Reports:FileNameFormat).
 ///
 /// Sheet 1 – RADET          (radet.sql     – typed model, strongly mapped)
 /// Sheet 2 – HTS            (hts.sql       – typed model, strongly mapped)
@@ -286,7 +286,7 @@ public sealed class RadetWorkbook(
     /// <summary>Reports:FileNameFormat with {facility}, {datim} and {date} filled in.</summary>
     private string BuildFileName(Facility facility, DateOnly runDate)
     {
-        var format = string.IsNullOrWhiteSpace(options.Value.FileNameFormat) ? "{facility}_{date}" : options.Value.FileNameFormat;
+        var format = string.IsNullOrWhiteSpace(options.Value.FileNameFormat) ? "{facility}_{datim}_{date}" : options.Value.FileNameFormat;
         var name = format
             .Replace("{facility}", SanitizeName(facility.FacilityName), StringComparison.OrdinalIgnoreCase)
             .Replace("{datim}", SanitizeName(facility.DatimId), StringComparison.OrdinalIgnoreCase)
