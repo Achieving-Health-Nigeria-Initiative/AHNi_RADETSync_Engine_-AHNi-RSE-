@@ -26,17 +26,22 @@ public sealed class ForceBackfillJobStore
     private readonly ILogger<ForceBackfillJobStore> _logger;
     private readonly string _machineName = Environment.MachineName;
     private readonly string _appVersion;
-    private readonly string _containerName;
+    private readonly string _defaultContainer;
+    private readonly FacilityProfile? _profile;
+
+    private string ContainerName => _profile?.UploadContainer is { Length: > 0 } c ? c : _defaultContainer;
 
     public ForceBackfillJobStore(
         TableServiceClient tableService,
         IOptions<ForceBackfillSettings> options,
         ILogger<ForceBackfillJobStore> logger,
-        IOptions<StorageSettings>? storage = null)
+        IOptions<StorageSettings>? storage = null,
+        FacilityProfile? profile = null)
     {
         _cfg = options.Value;
         _logger = logger;
-        _containerName = storage?.Value.Azure.ContainerName is { Length: > 0 } c ? c : "autoreport";
+        _profile = profile;
+        _defaultContainer = storage?.Value.Azure.ContainerName is { Length: > 0 } c ? c : "autoreport";
         _table = tableService.GetTableClient(_cfg.TableName);
         _appVersion = typeof(ForceBackfillJobStore).Assembly.GetName().Version?.ToString() ?? "unknown";
     }
@@ -167,7 +172,7 @@ public sealed class ForceBackfillJobStore
             ["Rows"] = rows,
             ["UploadUrl"] = uploadUrl,
             ["BlobPath"] = BlobPathOf(uploadUrl),
-            ["Container"] = _containerName,
+            ["Container"] = ContainerName,
             ["Error"] = string.Empty,
         }, ct);
 
@@ -223,7 +228,7 @@ public sealed class ForceBackfillJobStore
             return string.Empty;
 
         var path = Uri.UnescapeDataString(uri.AbsolutePath);
-        var marker = $"/{_containerName}/";
+        var marker = $"/{ContainerName}/";
         var at = path.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
         return at < 0 ? string.Empty : path[(at + marker.Length)..];
     }

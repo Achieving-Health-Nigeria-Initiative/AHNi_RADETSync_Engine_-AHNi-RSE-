@@ -235,13 +235,20 @@ dotnet run --project .	ools\LocalRun -- C:\pathppsettings.json C:\path\secrets.
 
 ## Community centres
 
-The community centres run the same service with two settings changed:
+The same install serves gen-pop facilities and community centres. With `Reports:FacilityType` = `auto`
+(the default) the service asks BayCentral once per start, with its DATIM code
+(`GET /api/addon/facility-type/<DATIM>`, from the EMR Version Control facility roster), whether it is
+a community centre (`care`). It keeps the answer until the next restart and saves it to
+`facility-profile.json` next to the exe, which it uses when BayCentral cannot be reached.
 
-- `Storage:Azure:ContainerName`: `community-center`
-- `Reports:FileNameFormat`: `{facility}_{datim}_{date}` (their files carry the DATIM ID)
+| | Gen-pop | Community centre (`care`) |
+|---|---|---|
+| Container | `Storage:Azure:ContainerName` (`autoreport`) | `Storage:Azure:CareContainerName` (`community-center`) |
+| File name | `Reports:FileNameFormat` (`{facility}_{date}`) | `Reports:CareFileNameFormat` (`{facility}_{datim}_{date}`) |
 
-Force backfills then upload there too, and the job records the container so BayCentral's download link
-points to it.
+A facility not on the roster, or with no answer yet and nothing saved, is treated as gen-pop.
+`Reports:FacilityType` = `care` or `genpop` fixes the type without asking. Force backfills follow the
+same routing, and the job records the container so BayCentral's download link points to it.
 
 ## Publish
 

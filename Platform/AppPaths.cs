@@ -8,4 +8,7 @@ public static class AppPaths
     /// (cycle-audit.jsonl). Under the service install this is C:\Services\AHNi-RSE\logs.
     /// </summary>
     public static string Logs => Path.Combine(AppContext.BaseDirectory, "logs");
+
+    /// <summary>The last facility type BayCentral gave (care / genpop), used when it cannot be reached.</summary>
+    public static string FacilityProfile => Path.Combine(AppContext.BaseDirectory, "facility-profile.json");
 }

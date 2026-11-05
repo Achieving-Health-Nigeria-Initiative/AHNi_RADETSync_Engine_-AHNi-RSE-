@@ -23,6 +23,9 @@ public class AzureStorageOptions
     /// Leave empty on every facility.
     /// </summary>
     public string LocalUploadFolder { get; set; } = string.Empty;
+
+    /// <summary>Container a community centre ("care" facility) uploads to.</summary>
+    public string CareContainerName { get; set; } = "community-center";
 }
 
 // ── Heartbeat ─────────────────────────────────────────────────────────────────
@@ -120,10 +123,22 @@ public class ReportSettings
     public string TimeZoneId { get; set; } = "UTC";
 
     /// <summary>
-    /// Workbook file name (without .xlsx). {facility} = facility name with spaces as underscores,
-    /// {datim} = DATIM ID, {date} = yyyy_MM_dd. Community centres use "{facility}_{datim}_{date}".
+    /// Gen-pop workbook file name (without .xlsx). {facility} = facility name with spaces as underscores,
+    /// {datim} = DATIM ID, {date} = yyyy_MM_dd.
     /// </summary>
     public string FileNameFormat { get; set; } = "{facility}_{date}";
+
+    /// <summary>Community-centre ("care") workbook file name; same placeholders.</summary>
+    public string CareFileNameFormat { get; set; } = "{facility}_{datim}_{date}";
+
+    /// <summary>
+    /// auto = ask BayCentral (FacilityTypeEndpoint) once per service start; care / genpop = fixed.
+    /// See Platform/FacilityProfile.
+    /// </summary>
+    public string FacilityType { get; set; } = "auto";
+
+    /// <summary>BayCentral facility-type endpoint; the facility's DATIM code is appended.</summary>
+    public string FacilityTypeEndpoint { get; set; } = "https://baycentral.ahnigeria.org.ng/api/addon/facility-type";
     public int GlobalCycleTimeoutSeconds { get; set; } = 3600;
     public int DefaultScriptTimeoutSeconds { get; set; } = 900;
 

@@ -121,6 +121,7 @@ try
 
     // ── RADET WORKBOOK ─────────────────────────────────────────────────────
     // HTS, Index, PMTCT HTS, Maternal, Prep and AHD are sheets of the RADET workbook.
+    builder.Services.AddSingleton<FacilityProfile>();
     builder.Services.AddSingleton<ReportScripts>();
     builder.Services.AddSingleton<RadetWorkbook>();
     builder.Services.AddSingleton<ReportOrchestrator>();

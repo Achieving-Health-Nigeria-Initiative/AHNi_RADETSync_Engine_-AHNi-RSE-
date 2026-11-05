@@ -7,7 +7,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 // Runs one RADET workbook cycle on this PC: SQL downloaded from blob storage as the service does,
-// data from a local LAMISPlus database, and the workbook saved to a local folder instead of uploaded.
+// data from a local LAMISPlus database, and the workbook saved to a local folder instead of uploaded,
+// under a folder named after the container it would go to (autoreport or community-center).
 //
 //   dotnet run --project tools/LocalRun -- <appsettings.json> <secrets.json> <database> <output folder> [as-of date]
 //
@@ -40,16 +41,22 @@ db.ConnectionString = $"Host=localhost;Port=5432;Database={args[2]};Username=pos
 using var lf = LoggerFactory.Create(b => b
     .AddSimpleConsole(o => { o.SingleLine = true; o.TimestampFormat = "HH:mm:ss "; })
     .SetMinimumLevel(LogLevel.Information));
+var database = new PostgresService(Options.Create(db), lf.CreateLogger<PostgresService>());
+// Care or gen-pop, as the service works it out (Reports:FacilityType / FacilityTypeEndpoint).
+var profile = new FacilityProfile(database, new PlainHttpClientFactory(), Options.Create(reports),
+    Options.Create(storage), lf.CreateLogger<FacilityProfile>());
+await profile.EnsureResolvedAsync();
+
 var azure = new AzureStorageProvider(
     new BlobServiceClient(cfg.GetConnectionString("AzureBlobStorage")),
-    Options.Create(storage), lf.CreateLogger<AzureStorageProvider>());
-var output = new LocalOutputStorage(azure, args[3], lf.CreateLogger("LocalOutput"));
+    Options.Create(storage), lf.CreateLogger<AzureStorageProvider>(), profile);
+var output = new LocalOutputStorage(azure, Path.Combine(args[3], profile.UploadContainer), lf.CreateLogger("LocalOutput"));
 var workbook = new RadetWorkbook(
     new ReportScripts(output, Options.Create(reports)),
     output,
-    new PostgresService(Options.Create(db), lf.CreateLogger<PostgresService>()),
+    database,
     new ExcelExporter(lf.CreateLogger<ExcelExporter>()),
-    Options.Create(reports),
+    profile,
     lf.CreateLogger<RadetWorkbook>());
 
 var backfill = args.Length > 4;
@@ -62,7 +69,13 @@ var (rows, path, _) = await workbook.RunAsync(context);
 Console.WriteLine($"DONE {rows:N0} RADET rows in {sw.Elapsed.TotalMinutes:F1} min -> {path}");
 return 0;
 
-/// Downloads scripts from blob storage as the service does, but "uploads" by copying to a local folder.
+sealed class PlainHttpClientFactory : IHttpClientFactory
+{
+    public HttpClient CreateClient(string name) => new();
+}
+
+/// Downloads scripts from blob storage as the service does, but "uploads" by copying to a local folder
+/// (<output folder>\<container>\RADET\<date>\...).
 sealed class LocalOutputStorage(IStorageProvider blob, string outputRoot, ILogger log) : IStorageProvider
 {
     public Task<string> DownloadAsync(string sourcePath, CancellationToken ct = default)

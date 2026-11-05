@@ -8,9 +8,13 @@ namespace AHNiRSE.Platform;
 public class AzureStorageProvider(
     BlobServiceClient blobClient,
     IOptions<StorageSettings> options,
-    ILogger<AzureStorageProvider> logger) : IStorageProvider
+    ILogger<AzureStorageProvider> logger,
+    FacilityProfile? profile = null) : IStorageProvider
 {
     private readonly AzureStorageOptions _cfg = options.Value.Azure;
+
+    // autoreport for gen-pop facilities, community-center for community centres (FacilityProfile).
+    private string UploadContainer => profile?.UploadContainer ?? _cfg.ContainerName;
 
     /// <summary>
     /// Downloads a SQL script from the script container into the staging folder and returns the
@@ -144,7 +148,7 @@ public class AzureStorageProvider(
         if (!string.IsNullOrWhiteSpace(_cfg.LocalUploadFolder))
             return SaveToLocalFolder(localFilePath, blobName);
 
-        var container = blobClient.GetBlobContainerClient(_cfg.ContainerName);
+        var container = blobClient.GetBlobContainerClient(UploadContainer);
         var blob = container.GetBlobClient(blobName);
         var fileSizeBytes = new FileInfo(localFilePath).Length;
 
@@ -163,7 +167,7 @@ public class AzureStorageProvider(
                     "[AzureStorage] Upload attempt {Attempt}/{Max} -> {Container}/{Blob} ({SizeMb:F2} MB).",
                     attempt,
                     maxAttempts,
-                    _cfg.ContainerName,
+                    UploadContainer,
                     blobName,
                     fileSizeBytes / 1_048_576.0);
 
@@ -228,7 +232,7 @@ public class AzureStorageProvider(
     private (string Url, DateTimeOffset UploadedAt) SaveToLocalFolder(string localFilePath, string blobName)
     {
         var dest = Path.GetFullPath(Path.Combine(
-            _cfg.LocalUploadFolder, _cfg.ContainerName, blobName.Replace('/', Path.DirectorySeparatorChar)));
+            _cfg.LocalUploadFolder, UploadContainer, blobName.Replace('/', Path.DirectorySeparatorChar)));
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         File.Copy(localFilePath, dest, overwrite: true);
 

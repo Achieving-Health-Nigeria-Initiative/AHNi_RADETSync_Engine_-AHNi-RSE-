@@ -1,6 +1,5 @@
 ﻿using System.Data;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace AHNiRSE.Reports;
 
@@ -33,7 +32,7 @@ public sealed class RadetWorkbook(
     IStorageProvider storage,
     IDatabaseService database,
     ExcelExporter exporter,
-    IOptions<ReportSettings> options,
+    FacilityProfile profile,
     ILogger<RadetWorkbook> logger)
 {
     /// <summary>
@@ -283,10 +282,13 @@ public sealed class RadetWorkbook(
         catch { /* non-fatal */ }
     }
 
-    /// <summary>Reports:FileNameFormat with {facility}, {datim} and {date} filled in.</summary>
+    /// <summary>
+    /// The facility's file name pattern (Reports:FileNameFormat, or CareFileNameFormat for a community
+    /// centre - see FacilityProfile) with {facility}, {datim} and {date} filled in.
+    /// </summary>
     private string BuildFileName(Facility facility, DateOnly runDate)
     {
-        var format = string.IsNullOrWhiteSpace(options.Value.FileNameFormat) ? "{facility}_{date}" : options.Value.FileNameFormat;
+        var format = string.IsNullOrWhiteSpace(profile.FileNameFormat) ? "{facility}_{date}" : profile.FileNameFormat;
         var name = format
             .Replace("{facility}", SanitizeName(facility.FacilityName), StringComparison.OrdinalIgnoreCase)
             .Replace("{datim}", SanitizeName(facility.DatimId), StringComparison.OrdinalIgnoreCase)
