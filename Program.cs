@@ -158,6 +158,9 @@ try
         startupLogger.LogInformation("[Startup] Azure Blob health check PASSED.");
     }
 
+    // Community centre or gen-pop, from appsettings.json (Facility:IsCommunityCentre).
+    scope.ServiceProvider.GetRequiredService<FacilityProfile>().Log(startupLogger);
+
     startupLogger.LogInformation("[Startup] Starting host...");
     await host.RunAsync();
     return 0;

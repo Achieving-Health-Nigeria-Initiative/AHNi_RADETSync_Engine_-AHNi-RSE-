@@ -16,11 +16,21 @@ echo.
 echo  =====================================================
 set "RSE_VERSION=unknown"
 for /f "usebackq delims=" %%v in (`PowerShell -NoProfile -Command "try { (Get-Item -LiteralPath '%~dp0AHNiRSE.exe').VersionInfo.ProductVersion.Split('+')[0] } catch { 'unknown' }"`) do set "RSE_VERSION=%%v"
+set "RSE_TYPE=GEN-POP facility"
+for /f "usebackq delims=" %%t in (`PowerShell -NoProfile -Command "try { if ((Get-Content -Raw -LiteralPath '%~dp0appsettings.json') -match '\x22IsCommunityCentre\x22\s*:\s*true') { 'COMMUNITY CENTRE (care)' } else { 'GEN-POP facility' } } catch { 'UNKNOWN - appsettings.json not readable' }"`) do set "RSE_TYPE=%%t"
 echo   AHNi RADETSync Engine (AHNi-RSE)  version %RSE_VERSION%
 echo   Facility Data Uploader - Service Installer
 echo  =====================================================
 echo   Installing from: %~dp0
 echo.
+echo   Facility type:   %RSE_TYPE%
+echo                    (Facility:IsCommunityCentre in appsettings.json)
+echo.
+echo   Community centres need the "...-community-centre.zip" package;
+echo   every other facility needs the plain "AHNi-RSE-<version>.zip".
+echo   If this is the wrong type for this facility, close this window now.
+echo.
+pause
 echo   This installer will:
 echo     - Stop and remove any legacy AutoReport / AutoRADET service
 echo     - Install (or update) the AHNi-RSE Windows Service

@@ -27,7 +27,6 @@ public class ReportOrchestrator(
     IDatabaseService database,
     IReportClock clock,
     ReportCycleAudit cycleAudit,
-    FacilityProfile profile,
     IOptions<ReportSettings> reportOptions,
     IOptions<ForceBackfillSettings> backfillOptions,
     ILogger<ReportOrchestrator> logger)
@@ -90,7 +89,6 @@ public class ReportOrchestrator(
             logger.LogInformation(
                 "[Orchestrator] Facility: {Name} ({DatimId}) [{State}]",
                 facility.FacilityName, facility.DatimId, facility.State);
-            await profile.EnsureResolvedAsync(cts.Token);
 
             if (await RunWorkbookAsync(context, cts.Token, ct) is not { } result)
             {
@@ -181,7 +179,6 @@ public class ReportOrchestrator(
 
             if (!await auth.ValidateInstallationAsync(cts.Token))
                 throw new InvalidOperationException(AuthFailed);
-            await profile.EnsureResolvedAsync(cts.Token);
 
             BackfillResult result;
             if (raw)

@@ -278,42 +278,34 @@ dotnet run --project .\tools\LocalRun -- C:\path\appsettings.json C:\path\secret
 
 ## Community centres
 
-The same install serves gen-pop facilities and community centres. The `Facility` section of
-`appsettings.json`, right under `Database`, decides which this facility is:
+The same exe serves gen-pop facilities and community centres. One setting in `appsettings.json`, in the
+`Facility` section right under `Database`, decides which this facility is - nothing is looked up:
 
 ```jsonc
 "Facility": {
-  "IsCommunityCentre": false,                     // true at community centres
-  "CheckBayCentral": true,                        // false = use IsCommunityCentre only
-  "CareExcludedSheets": [ "PMTCTHTS", "Maternal" ],
-  "TypeEndpoint": "https://baycentral.ahnigeria.org.ng/api/addon/facility-type"
+  "IsCommunityCentre": false,                       // true at community centres
+  "CareExcludedSheets": [ "PMTCTHTS", "Maternal" ]
 }
 ```
 
-Once per service start, in this order:
-
-1. `CheckBayCentral` = `false`: `IsCommunityCentre`, nothing else.
-2. BayCentral's facility roster (`GET <TypeEndpoint>/<DATIM>`, EMR Version Control). The answer is saved to
-   `facility-profile.json` next to the exe. If it differs from `IsCommunityCentre`, BayCentral wins and the
-   log says to update the setting.
-3. BayCentral can't be reached: the answer saved for this DATIM code at an earlier start.
-4. Nothing saved (e.g. a new install with no internet): `IsCommunityCentre`, and BayCentral is asked again
-   at the next cycle. So set it to `true` at community centres.
-
-| | Gen-pop | Community centre (`care`) |
+| | Gen-pop (`false`, default) | Community centre (`true`) |
 |---|---|---|
 | Container | `Storage:Azure:ContainerName` (`autoreport`) | `Storage:Azure:CareContainerName` (`community-center`) |
 | File name | `Reports:FileNameFormat` (`{facility}_{date}`) | `Reports:CareFileNameFormat` (`{facility}_{datim}_{date}`) |
-| Sheets | all 7 | without `Facility:CareExcludedSheets`: RADET, HTS, Index, Prep, AHD (as community-centre uploads have always been) |
+| Sheets | all 7 | without `CareExcludedSheets`: RADET, HTS, Index, Prep, AHD (as community-centre uploads have always been) |
+
+The release script builds both packages (`AHNi-RSE-<version>.zip` and `AHNi-RSE-<version>-community-centre.zip`,
+identical except for this setting); `Install.bat` shows which type it is about to install and waits before
+installing. The service logs the type at startup. To change a facility's type, edit the setting and restart
+the service.
 
 `CareExcludedSheets` takes `Reports:Scripts` names; left-out sheets are not queried at all. `[ "none" ]`
-keeps every sheet; RADET can't be left out. A facility not on the roster is gen-pop. Force backfills
-follow the same rules (raw reports skip the same reports and say so in the manifest), and the job records
-the container so download links point to it.
+keeps every sheet; RADET can't be left out. Force backfills follow the same rules (raw reports skip the same
+reports and say so in the manifest), and the job records the container so download links point to it.
 
 ## Publish
 
-Build the facility package with one command (from the repo folder):
+Build the facility packages with one command (from the repo folder):
 
 ```powershell
 .\deploy\Build-Release.ps1
@@ -322,7 +314,8 @@ Build the facility package with one command (from the repo folder):
 It publishes **one self-contained `AHNiRSE.exe`** for win-x64 (about 41 MB: .NET and every library are inside it,
 so facility servers need nothing installed), fills the live storage and database connection strings into the package's
 `appsettings.json` from a secrets file kept **outside the repo** (default `..\release.secrets.json`; see
-`deploy\release.secrets.example.json`), and writes `..\releases\AHNi-RSE-<version>.zip`. It refuses to build
+`deploy\release.secrets.example.json`), and writes `..\releases\AHNi-RSE-<version>.zip` (gen-pop) and `AHNi-RSE-<version>-community-centre.zip`
+(the same with `Facility:IsCommunityCentre` = `true`). It refuses to build
 if a connection string is still a placeholder, `LocalUploadFolder` is set, a test table name is in use, or
 the build isn't a single self-contained exe, and it deletes its publish folder afterwards. The package is
 four files: `AHNiRSE.exe`, `appsettings.json`, `Install.bat` and `Deploy-AHNi-RSEService.ps1`.

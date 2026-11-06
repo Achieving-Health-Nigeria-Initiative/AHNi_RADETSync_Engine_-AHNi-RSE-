@@ -117,14 +117,8 @@ public class ForceBackfillSettings
 /// </summary>
 public class FacilitySettings
 {
-    /// <summary>
-    /// This facility's type when BayCentral can't be asked: true = community centre (care), false = gen-pop.
-    /// Used when CheckBayCentral is false, or when BayCentral can't be reached and no earlier answer is saved.
-    /// </summary>
+    /// <summary>This facility's type: true = community centre (care), false = gen-pop (default).</summary>
     public bool IsCommunityCentre { get; set; }
-
-    /// <summary>Ask BayCentral's facility roster first (TypeEndpoint/&lt;DATIM&gt;). False = IsCommunityCentre only.</summary>
-    public bool CheckBayCentral { get; set; } = true;
 
     /// <summary>
     /// Reports:Scripts names of the sheets left out for community centres (workbook and raw report).
@@ -132,9 +126,6 @@ public class FacilitySettings
     /// RADET can't be left out.
     /// </summary>
     public string[]? CareExcludedSheets { get; set; }
-
-    /// <summary>BayCentral facility-type endpoint; the facility's DATIM code is appended.</summary>
-    public string TypeEndpoint { get; set; } = "https://baycentral.ahnigeria.org.ng/api/addon/facility-type";
 }
 
 // ── Reports ───────────────────────────────────────────────────────────────────

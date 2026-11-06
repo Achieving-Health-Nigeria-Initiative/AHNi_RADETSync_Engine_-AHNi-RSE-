@@ -43,11 +43,10 @@ using var lf = LoggerFactory.Create(b => b
     .AddSimpleConsole(o => { o.SingleLine = true; o.TimestampFormat = "HH:mm:ss "; })
     .SetMinimumLevel(LogLevel.Information));
 var database = new PostgresService(Options.Create(db), lf.CreateLogger<PostgresService>());
-// Care or gen-pop, as the service works it out (the "Facility" section).
+// Community centre or gen-pop, from appsettings.json (Facility:IsCommunityCentre), as in the service.
 var facilitySettings = cfg.GetSection("Facility").Get<FacilitySettings>() ?? new FacilitySettings();
-var profile = new FacilityProfile(database, new PlainHttpClientFactory(), Options.Create(reports),
-    Options.Create(storage), Options.Create(facilitySettings), lf.CreateLogger<FacilityProfile>());
-await profile.EnsureResolvedAsync();
+var profile = new FacilityProfile(Options.Create(reports), Options.Create(storage), Options.Create(facilitySettings));
+profile.Log(lf.CreateLogger("Facility"));
 
 var azure = new AzureStorageProvider(
     new BlobServiceClient(cfg.GetConnectionString("AzureBlobStorage")),
@@ -80,11 +79,6 @@ if (backfill && args.Length > 5 && args[5].Equals("raw", StringComparison.Ordina
 var (rows, path, _) = await workbook.RunAsync(context);
 Console.WriteLine($"DONE {rows:N0} RADET rows in {sw.Elapsed.TotalMinutes:F1} min -> {path}");
 return 0;
-
-sealed class PlainHttpClientFactory : IHttpClientFactory
-{
-    public HttpClient CreateClient(string name) => new();
-}
 
 /// Downloads scripts from blob storage as the service does, but "uploads" by copying to a local folder
 /// (<output folder>\<container>\RADET\<date>\...).

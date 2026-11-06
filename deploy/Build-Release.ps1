@@ -1,5 +1,8 @@
 ##############################################################################
-#  Build-Release.ps1 - builds the facility package (AHNi-RSE-<version>.zip)
+#  Build-Release.ps1 - builds the two facility packages from one build:
+#    AHNi-RSE-<version>.zip                    gen-pop facilities        (Facility:IsCommunityCentre = false)
+#    AHNi-RSE-<version>-community-centre.zip   community centres (care)  (Facility:IsCommunityCentre = true)
+#  They differ only in that setting; Install.bat shows which one is being installed.
 #
 #  1. Publishes ONE self-contained AHNiRSE.exe for win-x64 (.NET and every library inside it, so
 #     facility servers need nothing installed). The package is that exe, appsettings.json, Install.bat
@@ -9,7 +12,7 @@
 #     The repo's appsettings.json only has placeholders, and Install.bat copies the package's
 #     appsettings.json over the facility's, so the package must carry the real values.
 #  3. Refuses to build a package that still has a placeholder, local test settings or test tables.
-#  4. Zips it; the publish folder is deleted afterwards (it holds the secrets too).
+#  4. Zips both packages; the publish folders are deleted afterwards (they hold the secrets too).
 #
 #  USAGE (from the repo folder):
 #    .\deploy\Build-Release.ps1
@@ -81,20 +84,38 @@ try {
     $exe = Get-Item (Join-Path $stage 'AHNiRSE.exe')
     if ($exe.Length -lt 30MB)                                    { $problems += "AHNiRSE.exe is only $([math]::Round($exe.Length / 1MB)) MB - .NET is not bundled in it" }
     if (Get-ChildItem $stage -Recurse -Filter 'release.secrets*.json') { $problems += 'a secrets file got into the package' }
+    if ($text -notmatch '"IsCommunityCentre"\s*:\s*false')       { $problems += 'Facility:IsCommunityCentre is not false in the repo appsettings.json (the gen-pop package needs false)' }
     if ($problems) { throw "Package not built:`n  - " + ($problems -join "`n  - ") }
+
+    # -- Community-centre copy: the same files with Facility:IsCommunityCentre = true -------------
+    $careStage = Join-Path $OutDir 'AHNi-RSE-publish-community-centre'
+    if (Test-Path $careStage) { Remove-Item $careStage -Recurse -Force }
+    Copy-Item $stage $careStage -Recurse
+    $careSettings = Join-Path $careStage 'appsettings.json'
+    $careText = [regex]::Replace($text, '("IsCommunityCentre"\s*:\s*)false', '${1}true')
+    [IO.File]::WriteAllText($careSettings, $careText, (New-Object Text.UTF8Encoding($false)))
+    if ($careText -notmatch '"IsCommunityCentre"\s*:\s*true') { throw 'Could not set Facility:IsCommunityCentre in the community-centre package.' }
 
     # -- Zip -----------------------------------------------------------------
     $exeVersion = (Get-Item (Join-Path $stage 'AHNiRSE.exe')).VersionInfo.ProductVersion -replace '\+.*$', ''
-    $zip = Join-Path $OutDir "AHNi-RSE-$exeVersion.zip"
-    if (Test-Path $zip) { Remove-Item $zip -Force }
-    Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
-    $files = (Get-ChildItem $stage -Recurse -File | ForEach-Object Name) -join ', '
+    $packages = @(
+        @{ Stage = $stage;     Zip = Join-Path $OutDir "AHNi-RSE-$exeVersion.zip";                  Kind = 'gen-pop facilities' },
+        @{ Stage = $careStage; Zip = Join-Path $OutDir "AHNi-RSE-$exeVersion-community-centre.zip"; Kind = 'community centres' }
+    )
     Write-Host ""
-    Write-Host "Built $zip" -ForegroundColor Green
+    foreach ($p in $packages) {
+        if (Test-Path $p.Zip) { Remove-Item $p.Zip -Force }
+        Compress-Archive -Path (Join-Path $p.Stage '*') -DestinationPath $p.Zip
+        Write-Host "Built $($p.Zip)" -ForegroundColor Green
+        Write-Host "  for $($p.Kind)"
+    }
+    $files = (Get-ChildItem $stage -Recurse -File | ForEach-Object Name) -join ', '
     Write-Host "  version $exeVersion - single self-contained AHNiRSE.exe ($([math]::Round($exe.Length / 1MB)) MB), live settings filled in"
     Write-Host "  contents: $files"
-    Write-Host "  Unzip on the facility server and run Install.bat as Administrator."
+    Write-Host "  Unzip the right package on the facility server and double-click Install.bat."
 }
 finally {
-    if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+    foreach ($dir in @($stage, (Join-Path $OutDir 'AHNi-RSE-publish-community-centre'))) {
+        if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+    }
 }
