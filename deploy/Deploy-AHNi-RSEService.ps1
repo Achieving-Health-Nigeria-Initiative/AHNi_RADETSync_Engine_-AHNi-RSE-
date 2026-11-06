@@ -193,6 +193,16 @@ if ($svc)
 
 # -- 3. Copy files --------------------------------------------------------------
 $sourceDir = $PSScriptRoot   # directory containing this script = publish output
+
+# The package's appsettings.json replaces the installed one, so keep a copy of the old one first.
+$installedSettings = Join-Path $InstallPath 'appsettings.json'
+if ((Test-Path $installedSettings) -and (Test-Path (Join-Path $sourceDir 'appsettings.json')))
+{
+    $backup = "$installedSettings.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    Copy-Item -Path $installedSettings -Destination $backup -Force
+    Write-Host "[COPY] Previous appsettings.json kept as: $backup" -ForegroundColor Gray
+}
+
 Write-Host "[COPY] Copying files from '$sourceDir' to '$InstallPath'..." -ForegroundColor Yellow
 Copy-Item -Path "$sourceDir\*" -Destination $InstallPath -Recurse -Force
 Write-Host "[COPY] Done." -ForegroundColor Green

@@ -59,6 +59,9 @@
     <!-- Nor their files (e.g. a tool's bin\*.json), which would otherwise be copied into this build and publish. -->
     <Content Remove="tools\**;Tools\**" />
     <None Remove="tools\**;Tools\**" />
+    <!-- deploy\*.json (e.g. the release secrets example) is for the release script, not the package. -->
+    <Content Remove="deploy\**\*.json" />
+    <None Remove="deploy\**\*.json" />
   </ItemGroup>
 
   <ItemGroup>

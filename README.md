@@ -295,28 +295,29 @@ same routing, and the job records the container so BayCentral's download link po
 
 ## Publish
 
+Build the facility package with one command (from the repo folder):
+
+```powershell
+.\deploy\Build-Release.ps1
+```
+
+It publishes **self-contained** for win-x64 (facility servers don't need .NET installed, like the packages
+already deployed), fills the live storage and database connection strings into the package's
+`appsettings.json` from a secrets file kept **outside the repo** (default `..\release.secrets.json`; see
+`deploy\release.secrets.example.json`), and writes `..\releases\AHNi-RSE-<version>.zip`. It refuses to build
+if a connection string is still a placeholder, `LocalUploadFolder` is set, a test table name is in use, or
+the build isn't self-contained, and it deletes its publish folder afterwards.
+
+The package's `appsettings.json` replaces the facility's on install (the installer keeps the old one as
+`appsettings.json.bak-<date>`), which is why the package must carry the real values. The repo's
+`appsettings.json` keeps placeholders - never commit real ones.
+
 Each build is stamped with its date and time as the version (e.g. `2026.11.5.1432`); the heartbeat and
 backfill jobs report it as `AppVersion`, so BayCentral shows which build each facility runs. Pass
-`-p:Version=...` to `dotnet publish` for a fixed number.
+`-Version 2026.11.6.1` to the script (or `-p:Version=...` to `dotnet publish`) for a fixed number.
 
-
-Example self-contained publish:
-
-```powershell
-dotnet publish .\AHNi-RSE.csproj -c Release -r win-x64 --self-contained true -o C:\Temp\AHNi-RSE-publish
-```
-
-Current publish behavior:
-
-- `appsettings.json` is included
-- `appsettings.Development*.json` is excluded
+- `appsettings.Development*.json`, `tools\` and `deploy\*.json` are not included
 - Release PDB symbols are disabled
-
-Zip package:
-
-```powershell
-Compress-Archive -Path "C:\Temp\AHNi-RSE-publish\*" -DestinationPath "C:\Temp\AHNi-RSE.zip" -Force
-```
 
 ## Windows Service Deployment
 

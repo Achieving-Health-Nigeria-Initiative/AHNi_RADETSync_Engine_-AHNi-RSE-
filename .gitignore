@@ -20,3 +20,7 @@ Reports/Output/
 .idea/
 *.suo
 *.DotSettings.user
+
+# Release packages and their secrets (built outside the repo by deploy/Build-Release.ps1)
+release.secrets.json
+releases/
