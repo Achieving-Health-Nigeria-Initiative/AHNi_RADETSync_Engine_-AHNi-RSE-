@@ -1,8 +1,22 @@
 @echo off
 setlocal
+
+rem -- Run as Administrator: when double-clicked without admin rights, ask Windows (UAC prompt) to
+rem    start this same file again as Administrator, then close this window.
+fltmc >nul 2>&1
+if errorlevel 1 (
+  echo Requesting Administrator rights - choose Yes in the Windows prompt...
+  set "SELF=%~f0"
+  set "HERE=%~dp0"
+  call :elevate
+  exit /b
+)
+cd /d "%~dp0"
 echo.
 echo  =====================================================
-echo   AHNi RADETSync Engine (AHNi-RSE)  v2026-07-01
+set "RSE_VERSION=unknown"
+for /f "usebackq delims=" %%v in (`PowerShell -NoProfile -Command "try { (Get-Item -LiteralPath '%~dp0AHNiRSE.exe').VersionInfo.ProductVersion.Split('+')[0] } catch { 'unknown' }"`) do set "RSE_VERSION=%%v"
+echo   AHNi RADETSync Engine (AHNi-RSE)  version %RSE_VERSION%
 echo   Facility Data Uploader - Service Installer
 echo  =====================================================
 echo   Installing from: %~dp0
@@ -40,3 +54,18 @@ PowerShell -NoProfile -ExecutionPolicy Bypass -File "%DEPLOY_SCRIPT%"
 echo.
 pause
 endlocal
+exit /b
+
+:elevate
+rem Single quotes in the path are doubled for PowerShell's single-quoted strings.
+set "SELF=%SELF:'=''%"
+set "HERE=%HERE:'=''%"
+PowerShell -NoProfile -ExecutionPolicy Bypass -Command "try { Start-Process -FilePath '%SELF%' -WorkingDirectory '%HERE%' -Verb RunAs -ErrorAction Stop } catch { exit 1 }"
+if errorlevel 1 (
+  echo.
+  echo [ERROR] Administrator rights were not granted.
+  echo         Right-click Install.bat and choose "Run as administrator".
+  echo.
+  pause
+)
+exit /b
