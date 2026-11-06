@@ -275,6 +275,8 @@ dotnet run --project .\tools\LocalRun -- C:\path\appsettings.json C:\path\secret
 ```
 
 `secrets.json` holds only `{ "ConnectionStrings": { "AzureBlobStorage": "..." } }`; keep it out of git.
+The local Postgres password (user `postgres`) is read from the `LOCALRUN_DB_PASSWORD` environment variable
+(`$env:LOCALRUN_DB_PASSWORD = '...'` first) - never put it in code.
 
 ## Community centres
 
