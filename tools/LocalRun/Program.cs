@@ -43,9 +43,10 @@ using var lf = LoggerFactory.Create(b => b
     .AddSimpleConsole(o => { o.SingleLine = true; o.TimestampFormat = "HH:mm:ss "; })
     .SetMinimumLevel(LogLevel.Information));
 var database = new PostgresService(Options.Create(db), lf.CreateLogger<PostgresService>());
-// Care or gen-pop, as the service works it out (Reports:FacilityType / FacilityTypeEndpoint).
+// Care or gen-pop, as the service works it out (the "Facility" section).
+var facilitySettings = cfg.GetSection("Facility").Get<FacilitySettings>() ?? new FacilitySettings();
 var profile = new FacilityProfile(database, new PlainHttpClientFactory(), Options.Create(reports),
-    Options.Create(storage), lf.CreateLogger<FacilityProfile>());
+    Options.Create(storage), Options.Create(facilitySettings), lf.CreateLogger<FacilityProfile>());
 await profile.EnsureResolvedAsync();
 
 var azure = new AzureStorageProvider(

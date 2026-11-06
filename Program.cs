@@ -53,6 +53,7 @@ try
     // ── CONFIGURATION ──────────────────────────────────────────────────────
     builder.Services.Configure<StorageSettings>(builder.Configuration.GetSection("Storage"));
     builder.Services.Configure<DatabaseSettings>(builder.Configuration.GetSection("Database"));
+    builder.Services.Configure<FacilitySettings>(builder.Configuration.GetSection("Facility"));
     builder.Services.Configure<AuthSettings>(builder.Configuration.GetSection("Auth"));
     builder.Services.Configure<ReportSettings>(builder.Configuration.GetSection("Reports"));
     builder.Services.Configure<HeartbeatSettings>(builder.Configuration.GetSection("Heartbeat"));

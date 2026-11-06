@@ -26,7 +26,9 @@ public sealed record RawReportResult(
 /// workbook's (autoreport or community-center).
 ///
 /// All or nothing: if any enabled script fails, nothing is uploaded and the job fails with the reason.
-/// A script switched off in Reports:Scripts (Enabled=false) is skipped and listed as such in the manifest.
+/// A script switched off in Reports:Scripts (Enabled=false), or left out for community centres
+/// (Facility:CareExcludedSheets, PMTCT HTS and Maternal Cohort by default), is skipped and listed in the
+/// manifest with the reason.
 /// The manifest goes up after every Parquet file, so a manifest means the set is complete.
 /// </summary>
 public sealed class RawReport(
@@ -57,7 +59,7 @@ public sealed class RawReport(
 
     private sealed record ReportFile(
         string Report, string Script, bool Enabled, string? LocalPath = null, string? File = null,
-        int Rows = 0, int Columns = 0, DateOnly? StartDate = null, DateOnly? EndDate = null);
+        int Rows = 0, int Columns = 0, DateOnly? StartDate = null, DateOnly? EndDate = null, string? Note = null);
 
     public async Task<RawReportResult> RunAsync(CycleContext context, CancellationToken ct = default)
     {
@@ -132,10 +134,17 @@ public sealed class RawReport(
         long facilityId, Facility facility, CycleContext context, string baseName, string tempDir,
         CancellationTokenSource cts)
     {
+        if (profile.Excludes(script))
+        {
+            logger.LogInformation("[Raw] {Report} is left out for community centres (Facility:CareExcludedSheets) - skipped.", suffix);
+            return new ReportFile(suffix, script, Enabled: false,
+                Note: "not produced for community centres (Facility:CareExcludedSheets)");
+        }
+
         if (!scripts.IsEnabled(script))
         {
             logger.LogInformation("[Raw] {Report} is switched off in Reports:Scripts - skipped.", suffix);
-            return new ReportFile(suffix, script, Enabled: false);
+            return new ReportFile(suffix, script, Enabled: false, Note: "switched off in Reports:Scripts");
         }
 
         try
@@ -198,6 +207,7 @@ public sealed class RawReport(
                 columns = f.Columns,
                 startDate = f.StartDate?.ToString("yyyy-MM-dd"),
                 endDate = f.EndDate?.ToString("yyyy-MM-dd"),
+                note = f.Note,
             }),
         }, JsonOptions);
 }

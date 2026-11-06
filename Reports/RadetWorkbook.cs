@@ -74,26 +74,37 @@ public sealed class RadetWorkbook(
 
         using var parallelCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        var htsTask = RunHtsSheetAsync(facilityId, context, parallelCts.Token);
+        // Community centres leave some sheets out (Facility:CareExcludedSheets): not queried, not in the workbook.
+        var excluded = profile.ExcludedSheets;
+        if (excluded.Count > 0)
+            logger.LogInformation("[RADET] Community centre - left out: {Sheets} (Facility:CareExcludedSheets).",
+                string.Join(", ", SheetScripts.Where(kv => excluded.Contains(kv.Value)).Select(kv => kv.Key)));
+        static Task<(DataTable? Data, int Count)> Skipped() => Task.FromResult<(DataTable?, int)>((null, 0));
+
+        var htsTask = excluded.Contains("HTS")
+            ? Task.FromResult<(List<Hts> Rows, int Count)>(([], 0))
+            : RunHtsSheetAsync(facilityId, context, parallelCts.Token);
         // Index runs with the RADET period.
-        var indexTask = RunShapedSheetAsync("Index", "Index", queryParameters, IndexMapper.Map, parallelCts.Token);
+        var indexTask = excluded.Contains("Index")
+            ? Skipped()
+            : RunShapedSheetAsync("Index", "Index", queryParameters, IndexMapper.Map, parallelCts.Token);
 
         // Default start dates are the ones the earlier blob scripts used (the report module's own default is 1985).
         var datim = new Dictionary<string, object?> { [SheetLayouts.DatimCode] = facility.DatimId };
-        var pmtctTask = RunShapedSheetAsync(
+        var pmtctTask = excluded.Contains("PMTCTHTS") ? Skipped() : RunShapedSheetAsync(
             "PMTCTHTS", "PMTCT HTS",
             SheetParameters("PMTCTHTS", facilityId, context, ReportPeriods.CohortStart),
             rows => SheetProjection.Project(rows, SheetLayouts.PmtctHtsHeaders, SheetLayouts.PmtctHtsSources, datim),
             parallelCts.Token);
-        var maternalTask = RunShapedSheetAsync(
+        var maternalTask = excluded.Contains("Maternal") ? Skipped() : RunShapedSheetAsync(
             "Maternal", "Maternal Cohort",
             SheetParameters("Maternal", facilityId, context, ReportPeriods.CohortStart),
             rows => SheetProjection.Project(rows, SheetLayouts.MaternalCohortHeaders, SheetLayouts.MaternalCohortSources, datim),
             parallelCts.Token);
         // Prep and AHD: the report module queries return exactly the sheets' headers.
-        var prepTask = RunDataTableSheetAsync(
+        var prepTask = excluded.Contains("Prep") ? Skipped() : RunDataTableSheetAsync(
             "Prep", "Prep", SheetParameters("Prep", facilityId, context, ReportPeriods.ReportModuleStart), parallelCts.Token);
-        var ahdTask = RunDataTableSheetAsync(
+        var ahdTask = excluded.Contains("AHD") ? Skipped() : RunDataTableSheetAsync(
             "AHD", "AHD", SheetParameters("AHD", facilityId, context, ReportPeriods.ReportModuleStart), parallelCts.Token);
 
         List<Radet> radetRows;
@@ -137,6 +148,7 @@ public sealed class RadetWorkbook(
             new(SheetName: "Prep",            RawData: prepResult.Data,     HeaderMap: SheetHeaders.Prep),
             new(SheetName: "AHD",             RawData: ahdResult.Data),
         };
+        sheets.RemoveAll(sheet => SheetScripts.TryGetValue(sheet.SheetName, out var script) && excluded.Contains(script));
 
         try
         {
@@ -275,6 +287,17 @@ public sealed class RadetWorkbook(
         try { await Task.WhenAll(tasks); }
         catch { /* best effort: the RADET failure is what gets reported */ }
     }
+
+    /// <summary>Workbook sheet title → its Reports:Scripts name (RADET is never left out).</summary>
+    private static readonly Dictionary<string, string> SheetScripts = new()
+    {
+        ["HTS"] = "HTS",
+        ["Index"] = "Index",
+        ["PMTCT HTS"] = "PMTCTHTS",
+        ["Maternal Cohort"] = "Maternal",
+        ["Prep"] = "Prep",
+        ["AHD"] = "AHD",
+    };
 
     private static void TryDeleteTempFile(string path)
     {

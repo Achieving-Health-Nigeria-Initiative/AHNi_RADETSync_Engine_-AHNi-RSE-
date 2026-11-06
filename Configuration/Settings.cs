@@ -110,6 +110,33 @@ public class ForceBackfillSettings
     public int MaxAttempts { get; set; } = 3;
 }
 
+// ── Facility type ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// "Facility" section: community centre (care) or gen-pop. See Platform/FacilityProfile for how it is decided.
+/// </summary>
+public class FacilitySettings
+{
+    /// <summary>
+    /// This facility's type when BayCentral can't be asked: true = community centre (care), false = gen-pop.
+    /// Used when CheckBayCentral is false, or when BayCentral can't be reached and no earlier answer is saved.
+    /// </summary>
+    public bool IsCommunityCentre { get; set; }
+
+    /// <summary>Ask BayCentral's facility roster first (TypeEndpoint/&lt;DATIM&gt;). False = IsCommunityCentre only.</summary>
+    public bool CheckBayCentral { get; set; } = true;
+
+    /// <summary>
+    /// Reports:Scripts names of the sheets left out for community centres (workbook and raw report).
+    /// Null (not set) = PMTCTHTS and Maternal, as community-centre uploads have always been; [ "none" ] = none.
+    /// RADET can't be left out.
+    /// </summary>
+    public string[]? CareExcludedSheets { get; set; }
+
+    /// <summary>BayCentral facility-type endpoint; the facility's DATIM code is appended.</summary>
+    public string TypeEndpoint { get; set; } = "https://baycentral.ahnigeria.org.ng/api/addon/facility-type";
+}
+
 // ── Reports ───────────────────────────────────────────────────────────────────
 
 public class ReportSettings
@@ -131,14 +158,6 @@ public class ReportSettings
     /// <summary>Community-centre ("care") workbook file name; same placeholders.</summary>
     public string CareFileNameFormat { get; set; } = "{facility}_{datim}_{date}";
 
-    /// <summary>
-    /// auto = ask BayCentral (FacilityTypeEndpoint) once per service start; care / genpop = fixed.
-    /// See Platform/FacilityProfile.
-    /// </summary>
-    public string FacilityType { get; set; } = "auto";
-
-    /// <summary>BayCentral facility-type endpoint; the facility's DATIM code is appended.</summary>
-    public string FacilityTypeEndpoint { get; set; } = "https://baycentral.ahnigeria.org.ng/api/addon/facility-type";
     public int GlobalCycleTimeoutSeconds { get; set; } = 3600;
     public int DefaultScriptTimeoutSeconds { get; set; } = 900;
 

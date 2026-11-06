@@ -278,20 +278,38 @@ dotnet run --project .\tools\LocalRun -- C:\path\appsettings.json C:\path\secret
 
 ## Community centres
 
-The same install serves gen-pop facilities and community centres. With `Reports:FacilityType` = `auto`
-(the default) the service asks BayCentral once per start, with its DATIM code
-(`GET /api/addon/facility-type/<DATIM>`, from the EMR Version Control facility roster), whether it is
-a community centre (`care`). It keeps the answer until the next restart and saves it to
-`facility-profile.json` next to the exe, which it uses when BayCentral cannot be reached.
+The same install serves gen-pop facilities and community centres. The `Facility` section of
+`appsettings.json`, right under `Database`, decides which this facility is:
+
+```jsonc
+"Facility": {
+  "IsCommunityCentre": false,                     // true at community centres
+  "CheckBayCentral": true,                        // false = use IsCommunityCentre only
+  "CareExcludedSheets": [ "PMTCTHTS", "Maternal" ],
+  "TypeEndpoint": "https://baycentral.ahnigeria.org.ng/api/addon/facility-type"
+}
+```
+
+Once per service start, in this order:
+
+1. `CheckBayCentral` = `false`: `IsCommunityCentre`, nothing else.
+2. BayCentral's facility roster (`GET <TypeEndpoint>/<DATIM>`, EMR Version Control). The answer is saved to
+   `facility-profile.json` next to the exe. If it differs from `IsCommunityCentre`, BayCentral wins and the
+   log says to update the setting.
+3. BayCentral can't be reached: the answer saved for this DATIM code at an earlier start.
+4. Nothing saved (e.g. a new install with no internet): `IsCommunityCentre`, and BayCentral is asked again
+   at the next cycle. So set it to `true` at community centres.
 
 | | Gen-pop | Community centre (`care`) |
 |---|---|---|
 | Container | `Storage:Azure:ContainerName` (`autoreport`) | `Storage:Azure:CareContainerName` (`community-center`) |
 | File name | `Reports:FileNameFormat` (`{facility}_{date}`) | `Reports:CareFileNameFormat` (`{facility}_{datim}_{date}`) |
+| Sheets | all 7 | without `Facility:CareExcludedSheets`: RADET, HTS, Index, Prep, AHD (as community-centre uploads have always been) |
 
-A facility not on the roster, or with no answer yet and nothing saved, is treated as gen-pop.
-`Reports:FacilityType` = `care` or `genpop` fixes the type without asking. Force backfills follow the
-same routing, and the job records the container so BayCentral's download link points to it.
+`CareExcludedSheets` takes `Reports:Scripts` names; left-out sheets are not queried at all. `[ "none" ]`
+keeps every sheet; RADET can't be left out. A facility not on the roster is gen-pop. Force backfills
+follow the same rules (raw reports skip the same reports and say so in the manifest), and the job records
+the container so download links point to it.
 
 ## Publish
 

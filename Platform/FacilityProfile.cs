@@ -6,21 +6,26 @@ namespace AHNiRSE.Platform;
 
 /// <summary>
 /// Whether this facility is a community centre ("care") or a gen-pop facility, which decides where its
-/// workbooks go: care → Storage:Azure:CareContainerName (community-center) named Reports:CareFileNameFormat
-/// ({facility}_{datim}_{date}); everything else → Storage:Azure:ContainerName (autoreport) named
-/// Reports:FileNameFormat ({facility}_{date}).
+/// workbooks go and what they hold: care → Storage:Azure:CareContainerName (community-center) named
+/// Reports:CareFileNameFormat ({facility}_{datim}_{date}), without the Facility:CareExcludedSheets
+/// (PMTCT HTS and Maternal Cohort); everything else → Storage:Azure:ContainerName (autoreport) named
+/// Reports:FileNameFormat ({facility}_{date}), all sheets.
 ///
-/// Reports:FacilityType = care | genpop fixes it. With "auto" (the default) the type is asked of BayCentral
-/// once per service start (Reports:FacilityTypeEndpoint/&lt;DATIM&gt;, from the EMR Version Control roster)
-/// and kept until the service restarts. Each answer is saved to facility-profile.json next to the exe;
-/// when BayCentral cannot be reached, the saved answer is used. With no answer and nothing saved, the
-/// facility is treated as gen-pop for that cycle and BayCentral is asked again at the next one.
+/// Decided once per service start, in this order (appsettings.json "Facility" section):
+///   1. CheckBayCentral = false → IsCommunityCentre, nothing else.
+///   2. BayCentral's facility roster (TypeEndpoint/&lt;DATIM&gt;, EMR Version Control). The answer is saved
+///      to facility-profile.json next to the exe. If it differs from IsCommunityCentre, BayCentral wins
+///      and a warning says to update the setting.
+///   3. BayCentral can't be reached: the answer saved for this DATIM code at an earlier start.
+///   4. Nothing saved: IsCommunityCentre (default false = gen-pop), and BayCentral is asked again at the
+///      next cycle.
 /// </summary>
 public sealed class FacilityProfile(
     IDatabaseService database,
     IHttpClientFactory httpClientFactory,
     IOptions<ReportSettings> reportOptions,
     IOptions<StorageSettings> storageOptions,
+    IOptions<FacilitySettings> facilityOptions,
     ILogger<FacilityProfile> logger)
 {
     public const string HttpClientName = "InstallationAuthService"; // same Cloudflare-friendly client as verify-serial
@@ -28,11 +33,40 @@ public sealed class FacilityProfile(
 
     private readonly ReportSettings _reports = reportOptions.Value;
     private readonly AzureStorageOptions _storage = storageOptions.Value.Azure;
+    private readonly FacilitySettings _facility = facilityOptions.Value;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private volatile bool _resolved;
     private volatile bool _isCare;
 
     public bool IsCare => _isCare;
+
+    /// <summary>Left out for community centres when Facility:CareExcludedSheets is not set.</summary>
+    public static readonly string[] DefaultCareExcludedSheets = ["PMTCTHTS", "Maternal"];
+
+    private static readonly IReadOnlySet<string> NoSheets = new HashSet<string>();
+
+    /// <summary>
+    /// Reports:Scripts names of the sheets this facility leaves out: Facility:CareExcludedSheets for a
+    /// community centre ([ "none" ] = none), nothing for gen-pop. RADET is never left out.
+    /// </summary>
+    public IReadOnlySet<string> ExcludedSheets
+    {
+        get
+        {
+            if (!_isCare)
+                return NoSheets;
+            var names = _facility.CareExcludedSheets is { Length: > 0 } configured ? configured : DefaultCareExcludedSheets;
+            return names
+                .Select(n => n?.Trim() ?? string.Empty)
+                .Where(n => n.Length > 0
+                            && !n.Equals("none", StringComparison.OrdinalIgnoreCase)
+                            && !n.Equals(ReportScripts.Radet, StringComparison.OrdinalIgnoreCase))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>True when this facility leaves the Reports:Scripts entry <paramref name="scriptName"/> out.</summary>
+    public bool Excludes(string scriptName) => ExcludedSheets.Contains(scriptName);
 
     /// <summary>Container finished workbooks are uploaded to.</summary>
     public string UploadContainer => _isCare && !string.IsNullOrWhiteSpace(_storage.CareContainerName)
@@ -79,8 +113,9 @@ public sealed class FacilityProfile(
             _isCare = isCare;
             _resolved = definite;
             logger.LogInformation(
-                "[Facility] Type: {Type} - workbooks go to '{Container}' named {Format}{Retry}.",
+                "[Facility] Type: {Type} - workbooks go to '{Container}' named {Format}{Excluded}{Retry}.",
                 isCare ? "care (community centre)" : "gen-pop", UploadContainer, FileNameFormat,
+                ExcludedSheets.Count > 0 ? $", without {string.Join(" / ", ExcludedSheets)}" : "",
                 definite ? "" : " (provisional: BayCentral will be asked again next cycle)");
         }
         finally
@@ -91,11 +126,12 @@ public sealed class FacilityProfile(
 
     private async Task<(bool IsCare, bool Definite)> ResolveAsync(CancellationToken ct)
     {
-        var configured = (_reports.FacilityType ?? "auto").Trim().ToLowerInvariant();
-        if (configured is "care" or "genpop" or "ahnibridge")
+        if (!_facility.CheckBayCentral)
         {
-            logger.LogInformation("[Facility] Reports:FacilityType = {Type} (set in appsettings.json).", configured);
-            return (configured == Care, true);
+            logger.LogInformation(
+                "[Facility] Facility:CheckBayCentral is false - using Facility:IsCommunityCentre = {Value} from appsettings.json.",
+                _facility.IsCommunityCentre);
+            return (_facility.IsCommunityCentre, true);
         }
 
         string datim;
@@ -116,7 +152,15 @@ public sealed class FacilityProfile(
         if (answer is { } projectType)
         {
             Save(datim, projectType);
-            return (string.Equals(projectType, Care, StringComparison.OrdinalIgnoreCase), true);
+            var isCare = string.Equals(projectType, Care, StringComparison.OrdinalIgnoreCase);
+            if (isCare != _facility.IsCommunityCentre)
+            {
+                logger.LogWarning(
+                    "[Facility] BayCentral's roster says {Type} but Facility:IsCommunityCentre is {Setting} - using BayCentral's answer. " +
+                    "Set IsCommunityCentre to {Suggested} in appsettings.json so runs without internet match.",
+                    isCare ? "community centre (care)" : "gen-pop", _facility.IsCommunityCentre, isCare ? "true" : "false");
+            }
+            return (isCare, true);
         }
 
         return FromCache(datim);
@@ -125,10 +169,10 @@ public sealed class FacilityProfile(
     /// <summary>The roster's project type ("" when not on the roster), or null when BayCentral gave no usable answer.</summary>
     private async Task<string?> AskBayCentralAsync(string datim, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(_reports.FacilityTypeEndpoint))
+        if (string.IsNullOrWhiteSpace(_facility.TypeEndpoint))
             return null;
 
-        var url = $"{_reports.FacilityTypeEndpoint.TrimEnd('/')}/{Uri.EscapeDataString(datim)}";
+        var url = $"{_facility.TypeEndpoint.TrimEnd('/')}/{Uri.EscapeDataString(datim)}";
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -188,8 +232,10 @@ public sealed class FacilityProfile(
             logger.LogWarning("[Facility] Could not read {File}: {Message}", AppPaths.FacilityProfile, ex.Message);
         }
 
-        logger.LogWarning("[Facility] Facility type unknown and nothing saved - treating this facility as gen-pop for now.");
-        return (false, false);
+        logger.LogWarning(
+            "[Facility] BayCentral not reachable and nothing saved - using Facility:IsCommunityCentre = {Value} for now.",
+            _facility.IsCommunityCentre);
+        return (_facility.IsCommunityCentre, false);
     }
 
     private void Save(string datim, string projectType)
