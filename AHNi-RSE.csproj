@@ -77,6 +77,11 @@
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
       <CopyToPublishDirectory>Never</CopyToPublishDirectory>
     </Content>
+    <!-- Build input (it becomes AHNiRSE.runtimeconfig.json); not needed beside the exe. -->
+    <Content Update="runtimeconfig.template.json">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
 	<!-- Installer scripts live in deploy/ but are published next to the exe, where Install.bat expects them. -->

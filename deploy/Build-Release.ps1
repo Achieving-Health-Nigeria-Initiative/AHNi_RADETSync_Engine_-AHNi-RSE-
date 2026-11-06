@@ -1,7 +1,9 @@
 ##############################################################################
 #  Build-Release.ps1 - builds the facility package (AHNi-RSE-<version>.zip)
 #
-#  1. Publishes self-contained for win-x64 (facility servers don't need .NET installed).
+#  1. Publishes ONE self-contained AHNiRSE.exe for win-x64 (.NET and every library inside it, so
+#     facility servers need nothing installed). The package is that exe, appsettings.json, Install.bat
+#     and Deploy-AHNi-RSEService.ps1.
 #  2. Puts the live values into the package's appsettings.json: the storage and database
 #     connection strings (and licence key, if given) from a secrets file kept OUTSIDE the repo.
 #     The repo's appsettings.json only has placeholders, and Install.bat copies the package's
@@ -45,9 +47,11 @@ $stage = Join-Path $OutDir 'AHNi-RSE-publish'
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 
 $publishArgs = @('publish', (Join-Path $repo 'AHNi-RSE.csproj'), '-c', 'Release', '-r', 'win-x64',
-                 '--self-contained', 'true', '-o', $stage, '-nologo', '-v', 'q')
+                 '--self-contained', 'true', '-o', $stage, '-nologo', '-v', 'q',
+                 '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
+                 '-p:EnableCompressionInSingleFile=true', '-p:DebugType=none')
 if ($Version) { $publishArgs += "-p:Version=$Version" }
-Write-Host "Publishing (self-contained, win-x64)..." -ForegroundColor Cyan
+Write-Host "Publishing one self-contained AHNiRSE.exe (win-x64)..." -ForegroundColor Cyan
 & dotnet @publishArgs
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)." }
 
@@ -72,7 +76,10 @@ try {
     if ($text -match 'Local"|Test"|LocalHeartbeat')         { $problems += 'a table name looks like a test table' }
     if ($text -notmatch '"TableName"\s*:\s*"FacilityHeartbeat"') { $problems += 'Heartbeat:TableName is not FacilityHeartbeat' }
     if ($text -notmatch '"TableName"\s*:\s*"ForceBackfillJobs"') { $problems += 'ForceBackfill:TableName is not ForceBackfillJobs' }
-    if (-not (Test-Path (Join-Path $stage 'coreclr.dll')))       { $problems += 'not self-contained (coreclr.dll missing)' }
+    $loose = @(Get-ChildItem $stage -File | Where-Object { $_.Extension -in '.dll', '.pdb' -or $_.Name -like '*.runtimeconfig.json' -or $_.Name -like '*.deps.json' })
+    if ($loose)                                                  { $problems += "not a single exe - loose files: $($loose.Name -join ', ')" }
+    $exe = Get-Item (Join-Path $stage 'AHNiRSE.exe')
+    if ($exe.Length -lt 30MB)                                    { $problems += "AHNiRSE.exe is only $([math]::Round($exe.Length / 1MB)) MB - .NET is not bundled in it" }
     if (Get-ChildItem $stage -Recurse -Filter 'release.secrets*.json') { $problems += 'a secrets file got into the package' }
     if ($problems) { throw "Package not built:`n  - " + ($problems -join "`n  - ") }
 
@@ -81,10 +88,11 @@ try {
     $zip = Join-Path $OutDir "AHNi-RSE-$exeVersion.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
-    $files = (Get-ChildItem $stage -Recurse -File).Count
+    $files = (Get-ChildItem $stage -Recurse -File | ForEach-Object Name) -join ', '
     Write-Host ""
     Write-Host "Built $zip" -ForegroundColor Green
-    Write-Host "  version $exeVersion, $files files, self-contained, live settings (storage + database filled in)"
+    Write-Host "  version $exeVersion - single self-contained AHNiRSE.exe ($([math]::Round($exe.Length / 1MB)) MB), live settings filled in"
+    Write-Host "  contents: $files"
     Write-Host "  Unzip on the facility server and run Install.bat as Administrator."
 }
 finally {

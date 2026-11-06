@@ -301,16 +301,22 @@ Build the facility package with one command (from the repo folder):
 .\deploy\Build-Release.ps1
 ```
 
-It publishes **self-contained** for win-x64 (facility servers don't need .NET installed, like the packages
-already deployed), fills the live storage and database connection strings into the package's
+It publishes **one self-contained `AHNiRSE.exe`** for win-x64 (about 41 MB: .NET and every library are inside it,
+so facility servers need nothing installed), fills the live storage and database connection strings into the package's
 `appsettings.json` from a secrets file kept **outside the repo** (default `..\release.secrets.json`; see
 `deploy\release.secrets.example.json`), and writes `..\releases\AHNi-RSE-<version>.zip`. It refuses to build
 if a connection string is still a placeholder, `LocalUploadFolder` is set, a test table name is in use, or
-the build isn't self-contained, and it deletes its publish folder afterwards.
+the build isn't a single self-contained exe, and it deletes its publish folder afterwards. The package is
+four files: `AHNiRSE.exe`, `appsettings.json`, `Install.bat` and `Deploy-AHNi-RSEService.ps1`.
 
 The package's `appsettings.json` replaces the facility's on install (the installer keeps the old one as
 `appsettings.json.bak-<date>`), which is why the package must carry the real values. The repo's
 `appsettings.json` keeps placeholders - never commit real ones.
+
+Installed over an older multi-file version, the installer moves that version's loose runtime files (`*.dll`,
+`*.deps.json`, `*.runtimeconfig.json`, `createdump.exe`) and any nested `publish\` copies of older builds into
+`<install folder>\previous-version-<date>\`, with a copy of the old exe. Logs and settings stay. Nothing is
+deleted: remove that folder once the new version is confirmed working, or move its files back to roll back.
 
 Each build is stamped with its date and time as the version (e.g. `2026.11.5.1432`); the heartbeat and
 backfill jobs report it as `AppVersion`, so BayCentral shows which build each facility runs. Pass

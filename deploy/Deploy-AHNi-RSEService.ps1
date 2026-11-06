@@ -194,6 +194,27 @@ if ($svc)
 # -- 3. Copy files --------------------------------------------------------------
 $sourceDir = $PSScriptRoot   # directory containing this script = publish output
 
+# A single-exe package (no AHNiRSE.dll beside the exe) installed over an older multi-file one: move the old
+# version's loose runtime files - and any nested 'publish' copies of older builds - out of the way into a
+# dated folder, so the install folder holds just the new exe. Nothing is deleted; remove that folder once
+# the new version is confirmed working, or move its files back to roll back.
+if ((Test-Path $InstallPath) -and -not (Test-Path (Join-Path $sourceDir 'AHNiRSE.dll')))
+{
+    $oldFiles = @(Get-ChildItem $InstallPath -File | Where-Object {
+        $_.Extension -in '.dll', '.pdb' -or
+        $_.Name -in 'AHNiRSE.deps.json', 'AHNiRSE.runtimeconfig.json', 'runtimeconfig.template.json', 'createdump.exe' })
+    $oldDirs = @(Get-ChildItem $InstallPath -Directory | Where-Object { $_.Name -eq 'publish' })
+    if ($oldFiles.Count + $oldDirs.Count -gt 0)
+    {
+        $previous = Join-Path $InstallPath ("previous-version-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        New-Item -ItemType Directory -Path $previous -Force | Out-Null
+        $oldFiles | Move-Item -Destination $previous
+        $oldDirs  | Move-Item -Destination $previous
+        Copy-Item -Path (Join-Path $InstallPath 'AHNiRSE.exe') -Destination $previous -ErrorAction SilentlyContinue
+        Write-Host "[COPY] Previous version's files ($($oldFiles.Count) files, $($oldDirs.Count) folder(s)) moved to: $previous" -ForegroundColor Gray
+    }
+}
+
 # The package's appsettings.json replaces the installed one, so keep a copy of the old one first.
 $installedSettings = Join-Path $InstallPath 'appsettings.json'
 if ((Test-Path $installedSettings) -and (Test-Path (Join-Path $sourceDir 'appsettings.json')))
