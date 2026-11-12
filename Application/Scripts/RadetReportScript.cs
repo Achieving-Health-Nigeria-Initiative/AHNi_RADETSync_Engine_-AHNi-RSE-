@@ -350,6 +350,8 @@ public class RadetReportScript(
             ["ClientAddress"] = "clientAddress",
             ["Latitude"] = "latitude",
             ["Longitude"] = "longitude",
+            ["CreatedBy"] = "createdby",
+            ["EnteredAt"] = "enteredat",
         };
 
     // â"€â"€ Main entry point â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€

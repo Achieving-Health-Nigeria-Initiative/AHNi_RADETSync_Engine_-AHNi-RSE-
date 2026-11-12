@@ -48,4 +48,11 @@ public class Hts
     // ── Geolocation ───────────────────────────────────────────────────────────
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
+
+    // ── Who entered the test (AHNi spoke sites) ───────────────────────────────
+    // LAMIS Lite tablets record a spoke site's tests under the hub. BayCentral places
+    // each test at its site from the site app's check-ins, matched by this username
+    // and the visit date. Blank when the facility's LAMISPlus does not record it.
+    public string? CreatedBy { get; set; }
+    public string? EnteredAt { get; set; }
 }
