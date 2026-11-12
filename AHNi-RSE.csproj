@@ -1,0 +1,99 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <!-- net10.0 — matches the SDK installed on this machine -->
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>AHNiRSE</RootNamespace>
+    <AssemblyName>AHNiRSE</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Worker host — version-matched to net10 -->
+    <PackageReference Include="Azure.Data.Tables" Version="12.11.0" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
+    <PackageReference Include="Cronos" Version="0.11.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
+
+    <!--
+      Npgsql — PostgreSQL driver for the lamisplus EMR database.
+      ACTIVE: required for PostgresService.cs to compile.
+    -->
+    <PackageReference Include="Npgsql" Version="9.0.3" />
+
+    <!--
+      ClosedXML — Excel export.
+      ACTIVE: required for ExcelExporter.cs to compile.
+      0.104.0 is the version NuGet resolved (0.103.0 was not available).
+    -->
+    <PackageReference Include="ClosedXML" Version="0.102.2" />
+    <PackageReference Include="Serilog" Version="4.3.1" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+    <PackageReference Include="System.Management" Version="10.0.0" />
+
+    <!--
+      Patch for System.IO.Packaging vulnerability (GHSA-f32c-w444-8ppv, GHSA-qj66-m88j-hmgj).
+      ClosedXML pulls in System.IO.Packaging 8.0.0 which has known high severity CVEs.
+      Pinning to 9.0.0 resolves both advisories.
+    -->
+    <PackageReference Include="System.IO.Packaging" Version="9.0.0" />
+
+    <!--
+      Cron scheduling — replaces the Task.Delay loop in Worker.cs.
+      3.11.0 is the version NuGet resolved (3.10.1 was not available).
+    -->
+    <!-- <PackageReference Include="Quartz.Extensions.Hosting" Version="3.11.0" /> -->
+  </ItemGroup>
+
+  <!-- Exclude tools and other workspace helper projects from the main worker compile
+       so local helper console apps under /tools or /Tools are not picked up by the
+       SDK's default **/*.cs compile glob. This prevents duplicate assembly / top-level
+       statements errors when building/publishing the worker. -->
+  <ItemGroup>
+    <Compile Remove="tools\**\*.cs" />
+    <Compile Remove="Tools\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </Content>
+    <Content Update="appsettings.Development.json">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
+    <Content Update="appsettings.Development.example.json">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+	<ItemGroup>
+		<Content Include="Scripts\**\*.sql">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+		</Content>
+		<Content Include="Install.bat">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+		</Content>
+		<Content Include="Deploy-AHNi-RSEService.ps1">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<CopyToPublishDirectory>Always</CopyToPublishDirectory>
+		</Content>
+	</ItemGroup>
+
+</Project>
+
+
