@@ -19,6 +19,8 @@ using Microsoft.Extensions.Options;
 //   as-of date        yyyy-MM-dd: run as a force backfill for that date instead of today
 //   raw               with an as-of date: the raw report (Parquet files in raw-report\<date>\) instead of the workbook
 //
+// Set LOCALRUN_SCRIPT_DIR to a folder of .sql files to run those instead of the blob's scripts.
+//
 // Absolute paths are safest: configuration files resolve against the tool's build folder.
 if (args.Length < 4)
 {
@@ -84,8 +86,19 @@ return 0;
 /// (<output folder>\<container>\RADET\<date>\...).
 sealed class LocalOutputStorage(IStorageProvider blob, string outputRoot, ILogger log) : IStorageProvider
 {
+    // LOCALRUN_SCRIPT_DIR: a folder of .sql files to use instead of the blob's report-script/ (to try a
+    // script before uploading it); a script missing from the folder still comes from the blob.
     public Task<string> DownloadAsync(string sourcePath, CancellationToken ct = default)
-        => blob.DownloadAsync(sourcePath, ct);
+    {
+        var dir = Environment.GetEnvironmentVariable("LOCALRUN_SCRIPT_DIR");
+        var local = string.IsNullOrEmpty(dir) ? null : Path.Combine(dir, Path.GetFileName(sourcePath));
+        if (local is not null && File.Exists(local))
+        {
+            log.LogInformation("Script from LOCALRUN_SCRIPT_DIR (not the blob): {Path}", local);
+            return Task.FromResult(local);
+        }
+        return blob.DownloadAsync(sourcePath, ct);
+    }
 
     public Task<(string Url, DateTimeOffset UploadedAt)> UploadAsync(
         string localFilePath, string destinationPath, CancellationToken ct = default)
