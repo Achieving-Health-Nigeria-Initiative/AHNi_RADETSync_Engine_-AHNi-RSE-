@@ -1,10 +1,12 @@
 namespace AHNiRSE.Reports;
 
 /// <summary>
-/// Headers of the PMTCT HTS sheet (the report module's own export layout) and the Maternal Cohort sheet (as the
-/// earlier blob scripts produced it: order and spelling, including the doubled apostrophes in "Mother''s"), and
-/// the report module column each one is filled from where the names differ. Used with
-/// <see cref="SheetProjection"/>; "datimCode" (Maternal Cohort) is the facility's DATIM id.
+/// Headers of the PMTCT HTS and Maternal Cohort sheets, and the report module column each one is filled from where
+/// the names differ. PMTCT HTS follows the module's own export layout. Maternal Cohort follows the module's maternal
+/// cohort (child follow-up) export in the same order, with "datimCode" (the facility's DATIM id) first, without
+/// State, LGA and Facility, and with three headers kept as the earlier blob scripts named them (see
+/// MaternalCohortSources; the doubled apostrophes in "Mother''s" are the module's own). Used with
+/// <see cref="SheetProjection"/>.
 /// </summary>
 public static class SheetLayouts
 {
@@ -97,20 +99,36 @@ public static class SheetLayouts
         "datimCode",
         "Patient ID",
         "Mother''s Hospital Number",
+        "Mother''s Unique ID",
+        "Mother''s Date of Birth",
         "Age",
+        "Marital Status",
         "ANC Setting",
         "Point of Entry",
         "Date of Initial Visit",
         "Date of Index ANC Registration",
+        "LMP Date",
+        "Gestational Age (Weeks) @ First ANC visit",
+        "Gravida",
+        "Parity",
+        "PCV @ANC registration",
+        "Hepatitis B Test Result",
+        "Treated for Hepatitis B",
         "Syphilis Test Result",
         "Treated for Syphilis",
         "TB screening Status",
+        "Date tested for HIV",
+        "Type of HIV test",
         "Mother''s ART Start Date",
         "Timing of ART initiation in mother",
+        "Current Pregnancy Status",
         "GA at last visit (weeks)",
         "Mother''s Current ART Status",
+        "Visit Status",
         "Due Date for VL Sample collection @ 32 weeks",
         "Date for VL sample collection @ 32 weeks",
+        "VL result at 32-36 weeks GA",
+        "Date of VL result at 32-36 weeks GA",
         "Current Viral load Result",
         "Date of Current VL",
         "Date of Delivery",
@@ -120,10 +138,14 @@ public static class SheetLayouts
         "Child''s hospital ID number",
         "Sex - Child",
         "Birth Weight",
+        "Hepatitis B Vaccination - Birth Dose",
+        "Date of Hepatitis B Vaccination - 2nd Dose",
+        "Date of Hepatitis B Vaccination - 3rd Dose",
         "Date of ARV Prophylaxis Commencemment",
         "Type of Prophylaxis (ePNP or regular)",
         "Date of CTX (Cotrimoxazole)",
         "Current infant feeding options",
+        "Child Outcome @last visit",
         "Date of First DNA PCR Sample collection",
         "Result of first DNA PCR test",
         "Date first DNA PCR result was received",
@@ -139,9 +161,14 @@ public static class SheetLayouts
         "Date of confirmatory DNA PCR test sample collection",
         "Result of confirmatory DNA PCR test",
         "Date confirmatory DNA PCR result was received",
+        "Date of Rapid Antibody Sample Collection",
+        "Rapid Test Type",
+        "Result of Rapid Antitbody Test",
+        "Rapid Antibody Test Result",
         "Date of Child Final Outcome test",
         "Result (Child Final Outcome)",
         "Child''s ART Start Date",
+        "Child Unique ID",
     ];
 
     /// <summary>Report module maternal cohort columns whose names differ from the sheet's; every other header has a same-named column.</summary>
