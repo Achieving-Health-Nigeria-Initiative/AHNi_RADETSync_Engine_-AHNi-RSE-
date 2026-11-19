@@ -1,53 +1,99 @@
 namespace AHNiRSE.Reports;
 
 /// <summary>
-/// Headers of the PMTCT HTS and Maternal Cohort sheets, as the earlier blob scripts produced them (order and
-/// spelling, including the doubled apostrophes in "Mother''s"), and the report module column each one is filled
-/// from where the names differ. Used with <see cref="SheetProjection"/>; "datimCode" is the facility's DATIM id.
+/// Headers of the PMTCT HTS sheet (the report module's own export layout) and the Maternal Cohort sheet (as the
+/// earlier blob scripts produced it: order and spelling, including the doubled apostrophes in "Mother''s"), and
+/// the report module column each one is filled from where the names differ. Used with
+/// <see cref="SheetProjection"/>; "datimCode" (Maternal Cohort) is the facility's DATIM id.
 /// </summary>
 public static class SheetLayouts
 {
     public const string DatimCode = "datimCode";
 
+    /// <summary>
+    /// PMTCT HTS sheet headers: the report module's PMTCT HTS (Pepfar) Excel export (Constants.PMTCT_HTS_HEADER)
+    /// in the same order, without its S/No row counter.
+    /// </summary>
     public static readonly string[] PmtctHtsHeaders =
     [
-        "datimCode",
+        "State",
+        "LGA",
+        "Facility",
         "Patient ID",
         "Mother's Hospital Num",
         "Age",
-        "ANC Setting",
-        "Modality",
+        "Marital Status",
+        "Setting",
         "Point of Entry",
+        "Referred from Spokes Site",
+        "Modality",
         "Date of registration in index pregnancy",
-        "Gestational Age (Weeks) @ First ANC visit",
+        "Gravida",
+        "Parity",
+        "Previously Known HIV+ Result",
+        "Type of HIV Test",
+        "HIV Early Detect Result",
+        "Suspected Acute Infection",
+        "Viral Load",
         "Date Tested for HIV",
         "HIV Test Result",
-        "Syphillis Test Result",
+        "Known HBV Positive",
+        "Hepatitis B Test Result",
+        "Hepatitis B Treatment and Referral",
+        "Date Tested for Hepatitis C",
+        "Hepatitis C Test Result",
+        "Syphilis Test Result",
+        "Syphilis Treatment & Referral Result",
         "Date Of Maternal Retesting",
-        "Previously Known HIV +Ve Status",
-        "Facility Enrolled In",
-        "Linked to Syphilis Treatment",
+        "Maternal Retesting Result",
+        "TB Screening Status",
+        "Referred for Evaluation (Presumptive)",
+        "Partner Tested for HIV",
+        "Partner Tested for Syphilis",
+        "Partner Tested for Hepatitis - B",
+        "Referred To",
     ];
 
-    /// <summary>Report module PMTCT HTS (Pepfar) columns, as its Excel export uses them (fillPmtctHtsDataMapper); null = not in that report.</summary>
+    /// <summary>Report module PMTCT HTS query column behind each header, as fillPmtctHtsDataMapper fills it; null = left empty there too.</summary>
     public static readonly IReadOnlyDictionary<string, string?> PmtctHtsSources =
         new Dictionary<string, string?>
         {
+            ["State"] = "state",
+            ["LGA"] = "lga",
+            ["Facility"] = "facilityname",
             ["Patient ID"] = "personuuid",
             ["Mother's Hospital Num"] = "hospitalnumber",
             ["Age"] = "age",
-            ["ANC Setting"] = "setting",
-            ["Modality"] = "pepfarmodalities",
+            ["Marital Status"] = "maritalstatus",
+            ["Setting"] = "setting",
             ["Point of Entry"] = "facilitysetting",
+            ["Referred from Spokes Site"] = "refferedfrom",
+            ["Modality"] = "pepfarmodalities",
             ["Date of registration in index pregnancy"] = "date",
-            ["Gestational Age (Weeks) @ First ANC visit"] = null,
+            ["Gravida"] = "gravida",
+            ["Parity"] = "parity",
+            ["Previously Known HIV+ Result"] = "previouslyknownhivpositive",
+            ["Type of HIV Test"] = "typeofhivtest",
+            ["HIV Early Detect Result"] = "hivearlydetect",
+            ["Suspected Acute Infection"] = null,
+            ["Viral Load"] = "hivearlydetectviralload",
             ["Date Tested for HIV"] = "dateofvisit",
             ["HIV Test Result"] = "finalhivtestresult",
-            ["Syphillis Test Result"] = "syphilistestresult",
+            ["Known HBV Positive"] = "knownpositive",
+            ["Hepatitis B Test Result"] = "hbtestresult",
+            ["Hepatitis B Treatment and Referral"] = "hbtreatment",
+            ["Date Tested for Hepatitis C"] = "datetestedforhepatitisc",
+            ["Hepatitis C Test Result"] = "hepatitisc",
+            ["Syphilis Test Result"] = "syphilistestresult",
+            ["Syphilis Treatment & Referral Result"] = "syphilistreatment",
             ["Date Of Maternal Retesting"] = "dateofmaternalrestesting",
-            ["Previously Known HIV +Ve Status"] = "previouslyknownhivpositive",
-            ["Facility Enrolled In"] = null,
-            ["Linked to Syphilis Treatment"] = "syphilistreatment",
+            ["Maternal Retesting Result"] = "maternalrestesting",
+            ["TB Screening Status"] = "tbscreeningstatus",
+            ["Referred for Evaluation (Presumptive)"] = "tbreferred",
+            ["Partner Tested for HIV"] = "partnertestedhiv",
+            ["Partner Tested for Syphilis"] = "partnertestedsyphilis",
+            ["Partner Tested for Hepatitis - B"] = "partnertestedhb",
+            ["Referred To"] = "partnerreferal",
         };
 
     public static readonly string[] MaternalCohortHeaders =
