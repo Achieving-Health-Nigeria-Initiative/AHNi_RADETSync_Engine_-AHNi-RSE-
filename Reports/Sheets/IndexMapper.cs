@@ -4,9 +4,10 @@ namespace AHNiRSE.Reports;
 
 /// <summary>
 /// Shapes the Index sheet like the report module's HTS Index Excel export (Constants.FAMILY_INDEX_HEADER,
-/// in that order), followed by the index client's age, sex and date of birth from patient_person.
-/// report-script/index.sql returns these headers itself; the current module query (lower-case column names,
-/// no index client details) is mapped onto them the way fillFamilyIndexMapper does.
+/// in that order), with the index client's Sex, Age and Date of Birth from patient_person after Patient ID.
+/// report-script/index.sql returns the export's headers itself and the index client's details as
+/// "Index Client Sex/Age/Date of Birth" (see <see cref="ScriptColumns"/>); the current module query (lower-case
+/// column names, no index client details) is mapped onto the headers the way fillFamilyIndexMapper does.
 /// </summary>
 public static class IndexMapper
 {
@@ -18,6 +19,9 @@ public static class IndexMapper
         "Facility",
         "Facility Id (Datim)",
         "Patient ID",
+        "Sex",
+        "Age",
+        "Date of Birth",
         "Index Client Surname",
         "Index Client Other Names",
         "Index client code/unique ID",
@@ -43,10 +47,20 @@ public static class IndexMapper
         "Unique ART number (UAN)",
         "Date Enrolled in OVC",
         "OVC_Id",
-        "Index Client Age",
-        "Index Client Sex",
-        "Index Client Date of Birth",
     ];
+
+    /// <summary>
+    /// The index client's details, under the names index.sql gives them. The script cannot return them as
+    /// "Sex" and "Age": it also returns the contact's sex and age as "sex" and "age" for older RSE builds, and
+    /// DataTable column names are not case-sensitive.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string?> ScriptColumns =
+        new Dictionary<string, string?>
+        {
+            ["Sex"] = "Index Client Sex",
+            ["Age"] = "Index Client Age",
+            ["Date of Birth"] = "Index Client Date of Birth",
+        };
 
     /// <summary>
     /// Header → column of the unmodified module query (ReportRepository.getFamilyIndexReport), as
@@ -60,6 +74,9 @@ public static class IndexMapper
             ["Facility"] = "facilityname",
             ["Facility Id (Datim)"] = "datimid",
             ["Patient ID"] = "patientuuid",
+            ["Sex"] = null,
+            ["Age"] = null,
+            ["Date of Birth"] = null,
             ["Index Client Surname"] = "surname",
             ["Index Client Other Names"] = "firstname",
             ["Index client code/unique ID"] = "clientcode",
@@ -85,9 +102,6 @@ public static class IndexMapper
             ["Unique ART number (UAN)"] = "uan",
             ["Date Enrolled in OVC"] = "dateenrolledovc",
             ["OVC_Id"] = "ovcid",
-            ["Index Client Age"] = null,
-            ["Index Client Sex"] = null,
-            ["Index Client Date of Birth"] = null,
         };
 
     /// <summary>
@@ -96,6 +110,6 @@ public static class IndexMapper
     /// </summary>
     public static DataTable Map(DataTable source) =>
         source.Columns.Contains("Facility Id (Datim)")
-            ? SheetProjection.Project(source, Headers)
+            ? SheetProjection.Project(source, Headers, ScriptColumns)
             : SheetProjection.Project(source, Headers, ModuleQueryColumns);
 }
