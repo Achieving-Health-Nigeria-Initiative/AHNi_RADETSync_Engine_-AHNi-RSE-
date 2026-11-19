@@ -89,7 +89,7 @@ public sealed class RadetWorkbook(
             ? Skipped()
             : RunShapedSheetAsync("Index", "Index", queryParameters, IndexMapper.Map, parallelCts.Token);
 
-        // Default start dates are the ones the earlier blob scripts used (the report module's own default is 1985).
+        // Default start dates: the whole cohort (1980), except HTS (see ReportPeriods.HtsStart).
         var datim = new Dictionary<string, object?> { [SheetLayouts.DatimCode] = facility.DatimId };
         var pmtctTask = excluded.Contains("PMTCTHTS") ? Skipped() : RunShapedSheetAsync(
             "PMTCTHTS", "PMTCT HTS",
@@ -103,9 +103,9 @@ public sealed class RadetWorkbook(
             parallelCts.Token);
         // Prep and AHD: the report module queries return exactly the sheets' headers.
         var prepTask = excluded.Contains("Prep") ? Skipped() : RunDataTableSheetAsync(
-            "Prep", "Prep", SheetParameters("Prep", facilityId, context, ReportPeriods.ReportModuleStart), parallelCts.Token);
+            "Prep", "Prep", SheetParameters("Prep", facilityId, context, ReportPeriods.CohortStart), parallelCts.Token);
         var ahdTask = excluded.Contains("AHD") ? Skipped() : RunDataTableSheetAsync(
-            "AHD", "AHD", SheetParameters("AHD", facilityId, context, ReportPeriods.ReportModuleStart), parallelCts.Token);
+            "AHD", "AHD", SheetParameters("AHD", facilityId, context, ReportPeriods.CohortStart), parallelCts.Token);
 
         List<Radet> radetRows;
         int radetCount;

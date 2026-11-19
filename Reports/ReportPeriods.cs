@@ -11,11 +11,8 @@ namespace AHNiRSE.Reports;
 /// </summary>
 public static class ReportPeriods
 {
-    /// <summary>RADET, PMTCT HTS and Maternal Cohort default start: the whole cohort.</summary>
+    /// <summary>RADET, PMTCT HTS, Maternal Cohort, Prep and AHD default start: the whole cohort.</summary>
     public static readonly DateOnly CohortStart = new(1980, 1, 1);
-
-    /// <summary>Prep and AHD default start: the report module's own default.</summary>
-    public static readonly DateOnly ReportModuleStart = new(1985, 1, 1);
 
     /// <summary>A sheet whose default start does not depend on the end date.</summary>
     public static (DateOnly Start, DateOnly End) Resolve(ScriptConfig? cfg, CycleContext context, DateOnly defaultStart)

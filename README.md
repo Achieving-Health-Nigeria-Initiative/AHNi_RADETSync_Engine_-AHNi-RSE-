@@ -162,8 +162,8 @@ SQL scripts:
   | Index | `index.sql` | `ReportRepository.getFamilyIndexReport` (no dates) | - |
   | PMTCT HTS | `pmtct_hts.sql` | `ReportRepository.getPmtctReportMetaData` (Pepfar) | 1980-01-01 |
   | Maternal Cohort | `maternal.sql` | `query.yml` `pmtct-maternal-cohort-query` | 1980-01-01 |
-  | Prep | `prep.sql` | `query.yml` `prep-query` | 1985-01-01 |
-  | AHD | `ahd.sql` | `query.yml` `ahd-query` | 1985-01-01 |
+  | Prep | `prep.sql` | `query.yml` `prep-query` | 1980-01-01 |
+  | AHD | `ahd.sql` | `query.yml` `ahd-query` | 1980-01-01 |
 
   `query.yml` is the one the report module runs with (`#Released: 2026-09-18`). End dates default to today.
 - `BlobPath` may include a folder; if that path is missing, the file name at the container root is tried.

@@ -51,8 +51,8 @@ public sealed class RawReport(
         ("Index",             "Index",           ReportScripts.Radet, _ => ReportPeriods.CohortStart),
         ("PMTCTHTS",          "PMTCT_HTS",       "PMTCTHTS",          _ => ReportPeriods.CohortStart),
         ("Maternal",          "Maternal_Cohort", "Maternal",          _ => ReportPeriods.CohortStart),
-        ("Prep",              "Prep",            "Prep",              _ => ReportPeriods.ReportModuleStart),
-        ("AHD",               "AHD",             "AHD",               _ => ReportPeriods.ReportModuleStart),
+        ("Prep",              "Prep",            "Prep",              _ => ReportPeriods.CohortStart),
+        ("AHD",               "AHD",             "AHD",               _ => ReportPeriods.CohortStart),
     ];
 
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
