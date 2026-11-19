@@ -12,12 +12,10 @@ public static class SheetLayouts
 
     /// <summary>
     /// PMTCT HTS sheet headers: the report module's PMTCT HTS (Pepfar) Excel export (Constants.PMTCT_HTS_HEADER)
-    /// in the same order, without its S/No row counter.
+    /// in the same order, without its S/No row counter, State and LGA (the query still returns those two).
     /// </summary>
     public static readonly string[] PmtctHtsHeaders =
     [
-        "State",
-        "LGA",
         "Facility",
         "Patient ID",
         "Mother's Hospital Num",
@@ -58,8 +56,6 @@ public static class SheetLayouts
     public static readonly IReadOnlyDictionary<string, string?> PmtctHtsSources =
         new Dictionary<string, string?>
         {
-            ["State"] = "state",
-            ["LGA"] = "lga",
             ["Facility"] = "facilityname",
             ["Patient ID"] = "personuuid",
             ["Mother's Hospital Num"] = "hospitalnumber",
