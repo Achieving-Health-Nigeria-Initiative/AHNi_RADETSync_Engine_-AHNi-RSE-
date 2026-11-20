@@ -10,10 +10,7 @@ appsettings.*.local.json
 secrets.json
 
 # Local report output
-C:/Reports/
-Reports/Output/
 *.xlsx
-*.stub.csv
 
 # IDE
 .vs/

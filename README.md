@@ -27,7 +27,6 @@ Code is grouped by what the service does; each folder is one namespace (`AHNiRSE
 | `Licensing/` | The verify-serial registration check: `InstallationAuthService`, `DeviceIdentity`, `AuthResultCache`, `VerifySerialClient` |
 | `Platform/` | Postgres (incl. the read-only runner for custom scripts), `SqlGuard` (checks a custom script and its parameters), blob storage, Excel writer, Parquet writer (`ParquetExport`), WAT clock, memory release, health check, cycle audit, `RestartingWorker` |
 | `deploy/` | `Install.bat`, `Deploy-AHNi-RSEService.ps1` (published next to the exe), `Sync-Time.ps1` |
-| `docs/` | Background material |
 | `Update/` | Auto-update: `UpdateWorker` (checks the manifest, downloads, installs), `UpdateApplier` (swaps the exe, rolls back), `UpdateStatus`, `UpdateManifest` |
 | `tools/LocalRun/` | Runs one workbook, raw report or custom script against a local database, saved to a folder, or acts as a facility's RSE for test job tables (see Local Development) |
 | `tools/RsePublish/` | Publishes and manages auto-update releases from the command line (`deploy\Build-Release.ps1 -Publish`, `deploy\Manage-Update.ps1`) |
