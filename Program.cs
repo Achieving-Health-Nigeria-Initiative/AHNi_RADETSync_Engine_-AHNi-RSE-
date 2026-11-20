@@ -4,6 +4,10 @@ using Microsoft.Extensions.Hosting.WindowsServices;
 using Serilog;
 using Serilog.Events;
 
+// The auto-updater: a copy of this exe started by UpdateWorker to replace the service's exe (see UpdateApplier).
+if (args.Length > 0 && args[0] == UpdateFiles.ApplyUpdateArg && OperatingSystem.IsWindows())
+    return UpdateApplier.Run(args);
+
 var isWindowsService = WindowsServiceHelpers.IsWindowsService();
 
 // Logs live next to the exe (<install folder>\logs), whether it runs as a service or from a console.
@@ -58,6 +62,8 @@ try
     builder.Services.Configure<ReportSettings>(builder.Configuration.GetSection("Reports"));
     builder.Services.Configure<HeartbeatSettings>(builder.Configuration.GetSection("Heartbeat"));
     builder.Services.Configure<ForceBackfillSettings>(builder.Configuration.GetSection("ForceBackfill"));
+    builder.Services.Configure<AutoUpdateSettings>(builder.Configuration.GetSection("AutoUpdate"));
+    builder.Services.Configure<CustomScriptSettings>(builder.Configuration.GetSection("CustomScript"));
 
     // ── CLOCK — single source of truth for WAT date ────────────────────────
     // WatClock.TodayInWat() is called ONCE per cycle in ReportOrchestrator.
@@ -84,6 +90,7 @@ try
 
     // ── SHARED STATE & HEARTBEAT ───────────────────────────────────────────
     builder.Services.AddSingleton<FacilityRunState>();
+    builder.Services.AddSingleton<UpdateStatus>();
     builder.Services.AddSingleton<AzureHeartbeatService>();
 
     // ── FORCE BACKFILL ─────────────────────────────────────────────────────
@@ -126,12 +133,14 @@ try
     builder.Services.AddSingleton<ReportScripts>();
     builder.Services.AddSingleton<RadetWorkbook>();
     builder.Services.AddSingleton<RawReport>();   // force backfills of report type "raw" only
+    builder.Services.AddSingleton<CustomQuery>(); // force backfills of report type "custom" (Backfill app scripts)
     builder.Services.AddSingleton<ReportOrchestrator>();
 
     // ── BACKGROUND LOOPS — independent; each restarts itself if it fails ───
     builder.Services.AddHostedService<HeartbeatWorker>();
     builder.Services.AddHostedService<ScheduleWorker>();
     builder.Services.AddHostedService<BackfillWorker>();
+    builder.Services.AddHostedService<UpdateWorker>();   // auto-update from autoreport/rse-release
 
     var host = builder.Build();
 

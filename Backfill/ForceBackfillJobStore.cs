@@ -8,7 +8,7 @@ namespace AHNiRSE.Backfill;
 /// <summary>A force backfill job claimed by this machine.</summary>
 public sealed record ForceBackfillJob(
     string DatimId, string RowKey, string RequestId, DateOnly AsOfDate, int Attempts,
-    string ReportType = BackfillReportType.Default);
+    string ReportType = BackfillReportType.Default, CustomJob? Custom = null);
 
 /// <summary>What a force backfill job produces (the job row's ReportType; empty means default).</summary>
 public static class BackfillReportType
@@ -19,7 +19,14 @@ public static class BackfillReportType
     /// <summary>The scripts' raw results as Parquet files in raw-report/&lt;date&gt;/ (see RawReport).</summary>
     public const string Raw = "raw";
 
-    public static bool IsKnown(string type) => type is Default or Raw;
+    /// <summary>
+    /// A SQL script uploaded in the Backfill app, run read-only; its result goes to custom-reports as Parquet
+    /// (see CustomQuery). The job row also carries ScriptName, ScriptBlob, ScriptSha256, ParamStartDate,
+    /// ParamEndDate and Parameters (JSON object of the script's own :name values).
+    /// </summary>
+    public const string Custom = "custom";
+
+    public static bool IsKnown(string type) => type is Default or Raw or Custom;
 
     public static string Normalize(string? type) =>
         string.IsNullOrWhiteSpace(type) ? Default : type.Trim().ToLowerInvariant();
@@ -32,7 +39,8 @@ public static class BackfillReportType
 /// TABLE LAYOUT (shared with BayCentral):
 ///   PartitionKey = DatimId, RowKey = "{RequestId}_{yyyy-MM-dd}"
 ///   Status: pending → running → uploaded | failed   (BayCentral may also set cancelled, or reset to pending)
-///   ReportType: default (or empty) | raw - a type this RSE does not know fails without running
+///   ReportType: default (or empty) | raw | custom - a type this RSE does not know fails without running
+///   custom jobs also: ScriptName, ScriptBlob, ScriptSha256, ParamStartDate, ParamEndDate, Parameters (JSON)
 ///
 /// CLAIMING: a pending job is set to running with an ETag-conditional update. If BayCentral cancelled
 /// it, or another machine with the same DatimId claimed it first, Azure answers 412 and the job is skipped.
@@ -172,6 +180,21 @@ public sealed class ForceBackfillJobStore
                 continue;
             }
 
+            CustomJob? custom = null;
+            if (reportType == BackfillReportType.Custom && !TryReadCustomJob(job, out custom, out var invalid))
+            {
+                _logger.LogWarning("[Backfill] Custom job {Job} is incomplete - marked failed: {Why}", job.RowKey, invalid);
+                await TryUpdateAsync(job.PartitionKey, job.RowKey, new()
+                {
+                    ["Status"] = "failed",
+                    ["Error"] = invalid,
+                    ["CompletedAt"] = DateTimeOffset.UtcNow,
+                    ["MachineName"] = _machineName,
+                    ["AppVersion"] = _appVersion,
+                }, ct);
+                continue;
+            }
+
             var claim = new TableEntity(job.PartitionKey, job.RowKey)
             {
                 ["Status"] = "running",
@@ -187,7 +210,7 @@ public sealed class ForceBackfillJobStore
                 await _table.UpdateEntityAsync(claim, job.ETag, TableUpdateMode.Merge, ct);
                 return new ForceBackfillJob(
                     job.PartitionKey, job.RowKey, job.GetString("RequestId") ?? string.Empty, asOfDate, attempts + 1,
-                    reportType);
+                    reportType, custom);
             }
             catch (RequestFailedException ex) when (ex.Status == 412)
             {
@@ -198,24 +221,74 @@ public sealed class ForceBackfillJobStore
         return null;
     }
 
+    /// <summary>The script and parameter values of a custom job, or why the row can't be run.</summary>
+    private static bool TryReadCustomJob(TableEntity job, out CustomJob? custom, out string error)
+    {
+        custom = null;
+        error = string.Empty;
+        string Text(string key) => job.GetString(key)?.Trim() ?? string.Empty;
+
+        var name = Text("ScriptName");
+        var blob = Text("ScriptBlob");
+        var sha = Text("ScriptSha256");
+        if (name.Length == 0 || blob.Length == 0 || sha.Length != 64)
+        {
+            error = "Custom job without ScriptName, ScriptBlob or a 64-character ScriptSha256";
+            return false;
+        }
+
+        if (!DateOnly.TryParseExact(Text("ParamStartDate"), "yyyy-MM-dd", out var start)
+            || !DateOnly.TryParseExact(Text("ParamEndDate"), "yyyy-MM-dd", out var end))
+        {
+            error = $"Custom job with invalid ParamStartDate '{Text("ParamStartDate")}' or ParamEndDate '{Text("ParamEndDate")}'";
+            return false;
+        }
+
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (Text("Parameters") is { Length: > 0 } json)
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                foreach (var p in doc.RootElement.EnumerateObject())
+                    parameters[p.Name.ToLowerInvariant()] = p.Value.ValueKind == System.Text.Json.JsonValueKind.String
+                        ? p.Value.GetString() ?? string.Empty
+                        : p.Value.GetRawText();
+            }
+            catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+            {
+                error = $"Custom job with invalid Parameters JSON: {ex.Message}";
+                return false;
+            }
+        }
+
+        custom = new CustomJob(name, blob, sha, start, end, parameters, Text("RequestId"));
+        return true;
+    }
+
     /// <summary>
     /// Marks the job uploaded. Rows is the RADET row count; UploadUrl/BlobPath are the workbook, or the
     /// raw report's manifest; Files lists every blob the job uploaded (JSON array of paths in Container).
     /// </summary>
     public Task CompleteAsync(ForceBackfillJob job, BackfillResult result, CancellationToken ct = default)
-        => TryUpdateAsync(job.DatimId, job.RowKey, new()
+    {
+        var container = result.Container is { Length: > 0 } c ? c : ContainerName;
+        var blobPath = BlobPathOf(result.Url, container);
+        if (blobPath.Length == 0 && result.Files.Count > 0)
+            blobPath = result.Files[^1]; // e.g. Storage:Azure:LocalUploadFolder, whose URL is a local file
+        return TryUpdateAsync(job.DatimId, job.RowKey, new()
         {
             ["Status"] = "uploaded",
             ["CompletedAt"] = DateTimeOffset.UtcNow,
             ["UploadedAt"] = result.UploadedAt,
             ["Rows"] = result.Rows,
             ["UploadUrl"] = result.Url,
-            ["BlobPath"] = BlobPathOf(result.Url),
-            ["Container"] = ContainerName,
-            ["Files"] = System.Text.Json.JsonSerializer.Serialize(
-                result.Files.Count > 0 ? result.Files : [BlobPathOf(result.Url)]),
+            ["BlobPath"] = blobPath,
+            ["Container"] = container,
+            ["Files"] = System.Text.Json.JsonSerializer.Serialize(result.Files.Count > 0 ? result.Files : [blobPath]),
             ["Error"] = string.Empty,
         }, ct);
+    }
 
     public Task FailAsync(ForceBackfillJob job, string error, CancellationToken ct = default)
         => TryUpdateAsync(job.DatimId, job.RowKey, new()
@@ -263,13 +336,13 @@ public sealed class ForceBackfillJobStore
 
     // https://<account>.blob.core.windows.net/<container>/RADET/2026-09-30/x.xlsx -> RADET/2026-09-30/x.xlsx
     // (also file:///C:/<local folder>/<container>/RADET/... from Storage:Azure:LocalUploadFolder)
-    private string BlobPathOf(string uploadUrl)
+    private static string BlobPathOf(string uploadUrl, string containerName)
     {
         if (!Uri.TryCreate(uploadUrl, UriKind.Absolute, out var uri))
             return string.Empty;
 
         var path = Uri.UnescapeDataString(uri.AbsolutePath);
-        var marker = $"/{ContainerName}/";
+        var marker = $"/{containerName}/";
         var at = path.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
         return at < 0 ? string.Empty : path[(at + marker.Length)..];
     }

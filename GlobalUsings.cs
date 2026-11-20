@@ -6,3 +6,4 @@ global using AHNiRSE.Licensing;
 global using AHNiRSE.Platform;
 global using AHNiRSE.Reports;
 global using AHNiRSE.Schedule;
+global using AHNiRSE.Update;

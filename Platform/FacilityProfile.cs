@@ -84,7 +84,8 @@ public sealed class FacilityProfile(
             IsCare ? "community centre (care)" : "gen-pop", IsCare, UploadContainer, FileNameFormat,
             ExcludedSheets.Count > 0 ? $", without {string.Join(" / ", ExcludedSheets)}" : ", all sheets");
 
-    private static string SanitizeName(string name) =>
+    /// <summary>A name made safe for a file or blob name: spaces and characters Windows refuses become _.</summary>
+    public static string SanitizeName(string name) =>
         string.IsNullOrWhiteSpace(name)
             ? "UnknownFacility"
             : string.Concat(name.Trim().Select(c =>

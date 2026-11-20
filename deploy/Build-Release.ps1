@@ -20,11 +20,24 @@
 #
 #  Secrets file (default ..\release.secrets.json, next to the repo folder) - see
 #  deploy\release.secrets.example.json. Keep it out of git and off shared drives.
+#
+#  AUTO-UPDATE (-Publish): also uploads the exe to autoreport/rse-release and points manifest.json at it, so
+#  facilities already running an RSE with auto-update install it themselves (see Update/UpdateWorker.cs).
+#  Only the exe is published; facility settings and secrets never leave this PC.
+#    .\deploy\Build-Release.ps1 -Publish -Facilities "DATIM1,DATIM2" -Notes "Maternal layout"   # pilot first
+#    .\deploy\Manage-Update.ps1 promote -Facilities all                                         # then everyone
+#  Storage access: the secrets file's connection string, or -Account <storage account> to use your own
+#  Azure sign-in (needs "Storage Blob Data Contributor"); with -Account and no secrets file only the exe is
+#  built and published, without install packages. The git tree must be committed; the commit is recorded.
 ##############################################################################
 param(
     [string]$Secrets = "",
     [string]$OutDir  = "",
-    [string]$Version = ""
+    [string]$Version = "",
+    [switch]$Publish,
+    [string]$Facilities = "",
+    [string]$Notes = "",
+    [string]$Account = ""
 )
 $ErrorActionPreference = 'Stop'
 
@@ -33,13 +46,38 @@ if (-not $Secrets) { $Secrets = Join-Path (Split-Path $repo -Parent) 'release.se
 if (-not $OutDir)  { $OutDir  = Join-Path (Split-Path $repo -Parent) 'releases' }
 
 # -- Secrets -----------------------------------------------------------------
-if (-not (Test-Path $Secrets)) {
+$haveSecrets = Test-Path $Secrets
+if (-not $haveSecrets -and -not ($Publish -and $Account)) {
     throw "Secrets file not found: $Secrets (copy deploy\release.secrets.example.json there and fill it in)."
 }
-$s = Get-Content $Secrets -Raw | ConvertFrom-Json
-foreach ($name in 'AzureBlobStorage', 'DatabaseConnectionString') {
-    $v = $s.$name
-    if (-not $v -or $v -match '\.\.\.' -or $v -match 'REPLACE_WITH') { throw "Secrets file: '$name' is not filled in." }
+if ($haveSecrets) {
+    $s = Get-Content $Secrets -Raw | ConvertFrom-Json
+    foreach ($name in 'AzureBlobStorage', 'DatabaseConnectionString') {
+        $v = $s.$name
+        if (-not $v -or $v -match '\.\.\.' -or $v -match 'REPLACE_WITH') { throw "Secrets file: '$name' is not filled in." }
+    }
+}
+
+# -- Auto-update publish: checks before building ------------------------------
+if ($Publish) {
+    if (-not $Facilities) { throw "-Publish needs -Facilities: 'all' or a comma-separated list of DATIM ids (pilot first)." }
+    $dirty = & git -C $repo status --porcelain --untracked-files=no
+    if ($dirty) { throw "Commit your changes before publishing (the release records the commit):`n$($dirty -join "`n")" }
+    $commit = (& git -C $repo rev-parse --short HEAD).Trim()
+    $publisher = (& git -C $repo config user.name)
+    if (-not $publisher) { $publisher = $env:USERNAME }
+}
+
+# Uploads the built exe and points autoreport/rse-release/manifest.json at it (tools/RsePublish).
+function Publish-Update([string]$exePath) {
+    $toolArgs = @('run', '--project', (Join-Path $repo 'tools\RsePublish'), '-v', 'q', '--',
+                  'publish', '--exe', $exePath, '--facilities', $Facilities, '--notes', $Notes,
+                  '--commit', $commit, '--by', $publisher)
+    if ($Account) { $toolArgs += @('--account', $Account) } else { $toolArgs += @('--secrets', $Secrets) }
+    Write-Host ""
+    Write-Host "Publishing the update ($Facilities)..." -ForegroundColor Cyan
+    & dotnet @toolArgs
+    if ($LASTEXITCODE -ne 0) { throw "Publishing the update failed ($LASTEXITCODE)." }
 }
 
 function JsonString([string]$value) { $value.Replace('\', '\\').Replace('"', '\"') }
@@ -59,6 +97,18 @@ Write-Host "Publishing one self-contained AHNiRSE.exe (win-x64)..." -ForegroundC
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed ($LASTEXITCODE)." }
 
 try {
+    if (-not $haveSecrets) {
+        # -Publish -Account without a secrets file: the exe only, no install packages.
+        $exe = Get-Item (Join-Path $stage 'AHNiRSE.exe')
+        $loose = @(Get-ChildItem $stage -File | Where-Object { $_.Extension -in '.dll', '.pdb' })
+        if ($loose -or $exe.Length -lt 30MB) { throw "Not a single self-contained AHNiRSE.exe; not published." }
+        $copy = Join-Path $OutDir "AHNiRSE-$($exe.VersionInfo.FileVersion).exe"
+        Copy-Item $exe.FullName $copy -Force
+        Publish-Update $copy
+        Write-Host "No secrets file, so no install packages were built (new installs need them)." -ForegroundColor Yellow
+        return
+    }
+
     # -- Live settings -------------------------------------------------------
     $settingsPath = Join-Path $stage 'appsettings.json'
     $text = [IO.File]::ReadAllText($settingsPath)
@@ -113,6 +163,13 @@ try {
     Write-Host "  version $exeVersion - single self-contained AHNiRSE.exe ($([math]::Round($exe.Length / 1MB)) MB), live settings filled in"
     Write-Host "  contents: $files"
     Write-Host "  Unzip the right package on the facility server and double-click Install.bat."
+
+    if ($Publish) {
+        # The bare exe (no settings, no secrets) is what auto-update installs.
+        $copy = Join-Path $OutDir "AHNiRSE-$($exe.VersionInfo.FileVersion).exe"
+        Copy-Item $exe.FullName $copy -Force
+        Publish-Update $copy
+    }
 }
 finally {
     foreach ($dir in @($stage, (Join-Path $OutDir 'AHNi-RSE-publish-community-centre'))) {

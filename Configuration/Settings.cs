@@ -110,6 +110,27 @@ public class ForceBackfillSettings
     public int MaxAttempts { get; set; } = 3;
 }
 
+// ── Custom SQL ────────────────────────────────────────────────────────────────
+
+/// <summary>
+/// "CustomScript" section: force backfill jobs of report type "custom" run a SQL script uploaded in the
+/// Backfill app (read-only, see Reports/CustomQuery) and upload its result as Parquet. Facilities installed
+/// before this feature have no such section, so every value here has a working default.
+/// </summary>
+public sealed class CustomScriptSettings
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Container the results go to: &lt;Container&gt;/&lt;script&gt;/&lt;request&gt;/&lt;facility&gt;_&lt;datim&gt;.parquet.</summary>
+    public string Container { get; set; } = "custom-reports";
+
+    /// <summary>The query is stopped by PostgreSQL after this long (statement_timeout).</summary>
+    public int TimeoutSeconds { get; set; } = 900;
+
+    /// <summary>A result with more rows than this fails the job instead of being uploaded.</summary>
+    public int MaxRows { get; set; } = 2_000_000;
+}
+
 // ── Facility type ─────────────────────────────────────────────────────────────
 
 /// <summary>
@@ -176,3 +197,39 @@ public class ScriptConfig
     public string EndDate { get; set; } = string.Empty;
 }
 
+
+// ── Auto-update ───────────────────────────────────────────────────────────────
+
+/// <summary>
+/// "AutoUpdate" section: the service checks &lt;Container&gt;/&lt;Folder&gt;/manifest.json for a newer AHNiRSE.exe and
+/// installs it itself (see Update/UpdateWorker). Facilities installed before auto-update have no such section,
+/// so every value here has a working default.
+/// </summary>
+public sealed class AutoUpdateSettings
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Blob container of the releases; empty = Storage:Azure:ScriptContainerName (autoreport).</summary>
+    public string Container { get; set; } = string.Empty;
+
+    /// <summary>Folder in that container holding manifest.json and the AHNiRSE-&lt;version&gt;.exe files.</summary>
+    public string Folder { get; set; } = "rse-release";
+
+    /// <summary>How often to read the manifest.</summary>
+    public int CheckMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// A new version is downloaded after a random wait of up to this many minutes, so facilities don't all
+    /// download it at the same moment. 0 = straight away.
+    /// </summary>
+    public int SpreadMinutes { get; set; } = 10;
+
+    /// <summary>Not installed when a scheduled report cycle is due within this many minutes.</summary>
+    public int QuietMinutesBeforeSchedule { get; set; } = 10;
+
+    /// <summary>
+    /// After installing, the new version must start and keep running for a minute within this many minutes,
+    /// or the previous version is put back.
+    /// </summary>
+    public int HealthCheckMinutes { get; set; } = 5;
+}

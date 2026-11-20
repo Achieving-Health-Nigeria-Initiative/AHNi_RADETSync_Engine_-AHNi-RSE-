@@ -115,6 +115,110 @@ public class PostgresService(
         return facilityId;
     }
 
+    // ── CUSTOM SCRIPT (READ ONLY) ─────────────────────────────────────────────
+    public async Task<DataTable> ExecuteReadOnlyAsync(
+        string sql,
+        QueryParameters parameters,
+        IReadOnlyList<string> extraValues,
+        int timeoutSeconds,
+        int maxRows,
+        CancellationToken ct = default)
+    {
+        ValidateSql(sql);
+        timeoutSeconds = Math.Max(10, timeoutSeconds);
+        maxRows = Math.Max(1, maxRows);
+
+        await using var conn = await OpenConnectionAsync(ct);
+        // Never committed: disposing the transaction rolls it back, whatever happens.
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await using (var setup = new NpgsqlCommand(
+            $"SET TRANSACTION READ ONLY; SET LOCAL statement_timeout = {timeoutSeconds * 1000}", conn, tx))
+        {
+            await setup.ExecuteNonQueryAsync(ct);
+        }
+
+        await using var cmd = new NpgsqlCommand(sql, conn, tx)
+        {
+            // PostgreSQL's statement_timeout stops it first; this only covers a dead connection.
+            CommandTimeout = timeoutSeconds + 60,
+        };
+        cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Bigint, Value = parameters.FacilityId });
+        cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Date, Value = parameters.StartDate });
+        cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Date, Value = parameters.EndDate });
+        cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Date, Value = parameters.PreviousQuarterEnd });
+        cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Date, Value = parameters.PreviousPreviousQuarterEnd });
+        foreach (var value in extraValues)
+            cmd.Parameters.Add(new NpgsqlParameter { NpgsqlDbType = NpgsqlDbType.Unknown, Value = value });
+
+        logger.LogInformation(
+            "[Database] Custom script (read-only, timeout {Timeout}s, max {MaxRows:N0} rows, {Extra} custom parameter(s)).",
+            timeoutSeconds, maxRows, extraValues.Count);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
+        try
+        {
+            var table = new DataTable();
+            await using (var reader = await cmd.ExecuteReaderAsync(ct))
+            {
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                for (var i = 0; i < reader.FieldCount; i++)
+                {
+                    // SELECT a.id, b.id gives two "id" columns; a Parquet file needs distinct names.
+                    var name = reader.GetName(i) is { Length: > 0 } n ? n : $"column_{i + 1}";
+                    for (var k = 2; !names.Add(name); k++)
+                        name = $"{reader.GetName(i)}_{k}";
+                    var column = table.Columns.Add(name, reader.GetFieldType(i));
+                    column.ExtendedProperties[PgTypeKey] = reader.GetDataTypeName(i);
+                }
+
+                var values = new object[reader.FieldCount];
+                var tooMany = false;
+                table.BeginLoadData();
+                while (await reader.ReadAsync(ct))
+                {
+                    if (table.Rows.Count >= maxRows)
+                    {
+                        // Stop it on the server: closing the reader would otherwise read every remaining row.
+                        tooMany = true;
+                        cmd.Cancel();
+                        break;
+                    }
+                    reader.GetValues(values);
+                    table.Rows.Add(values);
+                }
+                table.EndLoadData();
+
+                if (tooMany)
+                {
+                    try { await reader.DisposeAsync(); }
+                    catch (PostgresException) { /* 57014, the cancel just sent */ }
+                    throw new DatabaseException(
+                        $"The query returned more than {maxRows:N0} rows (CustomScript:MaxRows). Narrow it down, e.g. with a date range.");
+                }
+            }
+
+            await tx.RollbackAsync(ct);
+            logger.LogInformation(
+                "[Database] Custom script completed. Rows={Rows}, Columns={Columns}, DurationMs={Ms}.",
+                table.Rows.Count, table.Columns.Count, sw.ElapsedMilliseconds);
+            return table;
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.QueryCanceled)
+        {
+            throw new DatabaseException(
+                $"The query ran longer than {timeoutSeconds}s (CustomScript:TimeoutSeconds) and was stopped.", ex);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ReadOnlySqlTransaction)
+        {
+            throw new DatabaseException($"The script tried to change the database, which is not allowed: {ex.MessageText}", ex);
+        }
+        catch (PostgresException ex)
+        {
+            throw new DatabaseException($"The query failed: {ex.MessageText}" +
+                                        (ex.Position > 0 ? $" (at character {ex.Position})" : string.Empty), ex);
+        }
+    }
+
     // ── FACILITY IDENTITY ─────────────────────────────────────────────────────
     /// <summary>
     /// Resolves the facility name, state, and DATIM ID from the LamISPlus EMR.

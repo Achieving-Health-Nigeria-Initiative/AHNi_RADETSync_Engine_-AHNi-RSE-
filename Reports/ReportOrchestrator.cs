@@ -5,10 +5,12 @@ using Microsoft.Extensions.Options;
 namespace AHNiRSE.Reports;
 
 /// <summary>
-/// What a force backfill uploaded: RADET rows, the workbook (or raw report manifest) URL, Azure's upload
-/// time and every blob path it wrote (empty for the workbook, which is just the URL).
+/// What a force backfill uploaded: RADET rows (a custom script's rows), the workbook (or raw report manifest,
+/// or custom result) URL, Azure's upload time, every blob path it wrote (empty for the workbook, which is just
+/// the URL) and the container they are in when it isn't the facility's usual one (custom-reports).
 /// </summary>
-public sealed record BackfillResult(int Rows, string Url, DateTimeOffset UploadedAt, IReadOnlyList<string> Files);
+public sealed record BackfillResult(
+    int Rows, string Url, DateTimeOffset UploadedAt, IReadOnlyList<string> Files, string? Container = null);
 
 /// <summary>
 /// Runs the RADET workbook for a scheduled cycle (RunAsync) or a force backfill (RunBackfillAsync):
@@ -22,6 +24,7 @@ public class ReportOrchestrator(
     InstallationAuthService auth,
     RadetWorkbook workbook,
     RawReport rawReport,
+    CustomQuery customQuery,
     ReportScripts scripts,
     AzureHeartbeatService heartbeat,
     IDatabaseService database,
@@ -41,6 +44,40 @@ public class ReportOrchestrator(
     // Set while a force backfill holds _cycleLock: a scheduled cycle then waits instead of skipping.
     private volatile bool _backfillHoldsCycleLock;
 
+    // Scheduled cycles and force backfills in progress (including those waiting for _cycleLock).
+    private int _activeRuns;
+
+    // 1 while auto-update holds _cycleLock to install a new version: nothing new starts.
+    private int _updateHold;
+
+    /// <summary>True while auto-update is installing a new version; no cycle or backfill starts.</summary>
+    public bool UpdatePending => Volatile.Read(ref _updateHold) == 1;
+
+    /// <summary>
+    /// Takes the cycle lock for auto-update when no cycle or force backfill is running, so none can start
+    /// while the service is being replaced. False when something is running; try again later.
+    /// </summary>
+    public bool TryHoldForUpdate()
+    {
+        if (!_cycleLock.Wait(0))
+            return false;
+
+        Interlocked.Exchange(ref _updateHold, 1);
+        if (Volatile.Read(ref _activeRuns) == 0)
+            return true;
+
+        Interlocked.Exchange(ref _updateHold, 0);
+        _cycleLock.Release();
+        return false;
+    }
+
+    /// <summary>Gives the lock back when an update could not be started.</summary>
+    public void ReleaseUpdateHold()
+    {
+        if (Interlocked.Exchange(ref _updateHold, 0) == 1)
+            _cycleLock.Release();
+    }
+
     /// <summary>A scheduled cycle as of today (WAT). Never throws; failures go to the heartbeat and audit.</summary>
     public async Task<(int TotalRows, string UploadUrl)> RunAsync(
         CancellationToken ct = default,
@@ -48,6 +85,12 @@ public class ReportOrchestrator(
     {
         if (!await _cycleLock.WaitAsync(0, ct))
         {
+            if (UpdatePending)
+            {
+                logger.LogWarning("[Orchestrator] Skipped - a new RSE version is being installed.");
+                return (0, string.Empty);
+            }
+
             if (!_backfillHoldsCycleLock)
             {
                 logger.LogWarning("[Orchestrator] Skipped - previous cycle still running.");
@@ -58,6 +101,7 @@ public class ReportOrchestrator(
             await _cycleLock.WaitAsync(ct);
         }
 
+        Interlocked.Increment(ref _activeRuns);
         var watToday = clock.TodayInWat();
         var startWat = clock.NowInWat();
         var slot = $"{(startWat.Hour / 2) * 2:00}:00";
@@ -126,15 +170,17 @@ public class ReportOrchestrator(
         }
         finally
         {
+            Interlocked.Decrement(ref _activeRuns);
             _cycleLock.Release();
         }
     }
 
     /// <summary>
     /// Runs one force backfill as of <paramref name="asOfDate"/>: the RADET workbook, uploaded to
-    /// RADET/&lt;asOfDate&gt;/ (report type default), or the raw report, uploaded to raw-report/&lt;asOfDate&gt;/
-    /// (report type raw). It never touches the heartbeat (Last RADET, Status). Throws when nothing was
-    /// uploaded, so the caller can mark the job failed.
+    /// RADET/&lt;asOfDate&gt;/ (report type default), the raw report, uploaded to raw-report/&lt;asOfDate&gt;/
+    /// (report type raw), or a custom script's result (report type custom, <paramref name="custom"/>; see
+    /// CustomQuery). It never touches the heartbeat (Last RADET, Status). Throws when nothing was uploaded, so
+    /// the caller can mark the job failed.
     ///
     /// It runs alongside a scheduled cycle unless ForceBackfill:RunAlongsideSchedule is false, or it is a
     /// workbook for today (both would write the same file); then it takes the cycle lock, and a scheduled
@@ -144,10 +190,34 @@ public class ReportOrchestrator(
         DateOnly asOfDate,
         string jobId,
         string reportType = BackfillReportType.Default,
+        CustomJob? custom = null,
         CancellationToken ct = default)
     {
+        if (reportType == BackfillReportType.Custom && custom is null)
+            throw new ArgumentException("A custom job needs its script details.", nameof(custom));
+
+        // Counted from here, so auto-update never installs while a backfill runs or waits.
+        Interlocked.Increment(ref _activeRuns);
+        try
+        {
+            return await RunBackfillCoreAsync(asOfDate, jobId, reportType, custom, ct);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _activeRuns);
+        }
+    }
+
+    private async Task<BackfillResult> RunBackfillCoreAsync(
+        DateOnly asOfDate, string jobId, string reportType, CustomJob? custom, CancellationToken ct)
+    {
         var raw = reportType == BackfillReportType.Raw;
-        var holdCycleLock = !_backfill.RunAlongsideSchedule || (!raw && asOfDate == clock.TodayInWat());
+        var isCustom = reportType == BackfillReportType.Custom;
+        // Only a workbook for today writes the same file as a scheduled cycle. While an update holds the lock,
+        // a backfill that would run alongside waits for it like any other.
+        var holdCycleLock = !_backfill.RunAlongsideSchedule
+                            || (!raw && !isCustom && asOfDate == clock.TodayInWat())
+                            || UpdatePending;
         if (holdCycleLock)
         {
             if (!await _cycleLock.WaitAsync(0, ct))
@@ -181,7 +251,11 @@ public class ReportOrchestrator(
                 throw new InvalidOperationException(AuthFailed);
 
             BackfillResult result;
-            if (raw)
+            if (isCustom)
+            {
+                result = await RunCustomAsync(context, custom!, cts.Token);
+            }
+            else if (raw)
             {
                 result = await RunRawReportAsync(context, cts.Token);
             }
@@ -217,7 +291,7 @@ public class ReportOrchestrator(
             }
 
             await SafeRecordAuditAsync(
-                context, startWat, raw ? "backfill-raw" : "backfill", facility, authPassed: error != AuthFailed,
+                context, startWat, isCustom ? "backfill-custom" : raw ? "backfill-raw" : "backfill", facility, authPassed: error != AuthFailed,
                 rows, url, error, sw.ElapsedMilliseconds);
         }
     }
@@ -240,6 +314,30 @@ public class ReportOrchestrator(
         catch (OperationCanceledException) when (!cycleToken.IsCancellationRequested)
         {
             throw new TimeoutException($"Raw report timed out after {timeout}s");
+        }
+        finally
+        {
+            MemoryPressureHelper.ReleaseAfterCycle(logger);
+        }
+    }
+
+    /// <summary>
+    /// A custom script within CustomQuery.JobTimeoutSeconds (CustomScript:TimeoutSeconds for the query itself,
+    /// which PostgreSQL enforces). Throws with the reason when it fails or times out.
+    /// </summary>
+    private async Task<BackfillResult> RunCustomAsync(CycleContext context, CustomJob job, CancellationToken cycleToken)
+    {
+        var timeout = customQuery.JobTimeoutSeconds;
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cycleToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(timeout));
+
+        try
+        {
+            return await customQuery.RunAsync(job, context, cts.Token);
+        }
+        catch (OperationCanceledException) when (!cycleToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Custom script timed out after {timeout}s");
         }
         finally
         {

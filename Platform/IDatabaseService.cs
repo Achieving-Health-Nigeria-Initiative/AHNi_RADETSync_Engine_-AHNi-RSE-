@@ -29,6 +29,20 @@ public interface IDatabaseService
     /// LAMISPlus report module does: base_application_user.current_organisation_unit_id of user 1.
     /// </summary>
     Task<long> GetFacilityIdAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Runs a custom script (already checked and converted by SqlGuard) in a READ ONLY transaction that is
+    /// always rolled back: $1..$5 are the <see cref="QueryParameters"/>, $6, $7 ... <paramref name="extraValues"/>
+    /// (untyped, so PostgreSQL types them from where they are used). PostgreSQL stops the query after
+    /// <paramref name="timeoutSeconds"/>; more than <paramref name="maxRows"/> rows fails it.
+    /// </summary>
+    Task<DataTable> ExecuteReadOnlyAsync(
+        string sql,
+        QueryParameters parameters,
+        IReadOnlyList<string> extraValues,
+        int timeoutSeconds,
+        int maxRows,
+        CancellationToken ct = default);
 }
 
 /// <summary>

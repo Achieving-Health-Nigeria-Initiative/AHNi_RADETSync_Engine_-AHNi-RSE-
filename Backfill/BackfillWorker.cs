@@ -8,7 +8,7 @@ namespace AHNiRSE.Backfill;
 /// facility's pending jobs one at a time, oldest first, runs each through
 /// ReportOrchestrator.RunBackfillAsync (which decides whether it may overlap a scheduled cycle) and
 /// records the result on the job row. A job's ReportType picks what it produces: the RADET workbook
-/// (default) or the raw report (raw, see RawReport).
+/// (default), the raw report (raw, see RawReport) or a custom SQL script's result (custom, see CustomQuery).
 ///
 /// Every poll also releases jobs left running by a machine that never came back (see
 /// ForceBackfillJobStore.ReleaseAbandonedAsync), so a job taken by a retired or renamed PC is not
@@ -60,6 +60,8 @@ public sealed class BackfillWorker(
         var datimId = state.Snapshot().DatimId;
         if (string.IsNullOrWhiteSpace(datimId))
             return; // facility identity not loaded yet
+        if (orchestrator.UpdatePending)
+            return; // a new version is being installed; jobs are picked up after the restart
 
         try
         {
@@ -80,7 +82,7 @@ public sealed class BackfillWorker(
 
                 try
                 {
-                    var result = await orchestrator.RunBackfillAsync(job.AsOfDate, job.RowKey, job.ReportType, ct);
+                    var result = await orchestrator.RunBackfillAsync(job.AsOfDate, job.RowKey, job.ReportType, job.Custom, ct);
                     await jobs.CompleteAsync(job, result, ct);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)

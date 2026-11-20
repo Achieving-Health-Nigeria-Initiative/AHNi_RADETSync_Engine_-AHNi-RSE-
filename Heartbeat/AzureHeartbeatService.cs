@@ -37,6 +37,7 @@ public sealed class AzureHeartbeatService
 {
     private readonly TableClient _table;
     private readonly FacilityRunState _state;
+    private readonly UpdateStatus _update;
     private readonly HeartbeatSettings _cfg;
     private readonly ILogger<AzureHeartbeatService> _logger;
     private readonly string _machineName = Environment.MachineName;
@@ -54,10 +55,12 @@ public sealed class AzureHeartbeatService
     public AzureHeartbeatService(
         TableServiceClient tableService,
         FacilityRunState state,
+        UpdateStatus updateStatus,
         IOptions<HeartbeatSettings> options,
         ILogger<AzureHeartbeatService> logger)
     {
         _state = state;
+        _update = updateStatus;
         _cfg = options.Value;
         _logger = logger;
         _table = tableService.GetTableClient(_cfg.TableName);
@@ -207,8 +210,10 @@ public sealed class AzureHeartbeatService
         status is 429 or 500 or 502 or 503 or 504;
 
     // ── Row fields ────────────────────────────────────────────────────────────
-    private TableEntity StatusEntity(FacilityStateSnapshot snapshot) =>
-        new(snapshot.DatimId, "latest")
+    private TableEntity StatusEntity(FacilityStateSnapshot snapshot)
+    {
+        var update = _update.Snapshot();
+        return new(snapshot.DatimId, "latest")
         {
             ["FacilityName"] = snapshot.FacilityName,
             ["DatimId"] = snapshot.DatimId,
@@ -219,7 +224,15 @@ public sealed class AzureHeartbeatService
             ["LastSeen"] = DateTimeOffset.UtcNow,
             ["OfflineThresholdMinutes"] = _cfg.OfflineThresholdMinutes,
             ["LastReportError"] = snapshot.LastError,
+
+            // Auto-update (see UpdateStatus); times as ISO-8601 strings like LastReportRun.
+            ["UpdateStatus"] = update.Status,
+            ["UpdateTargetVersion"] = update.TargetVersion,
+            ["UpdateError"] = update.Error,
+            ["UpdateLastChecked"] = update.LastChecked?.ToString("o") ?? string.Empty,
+            ["UpdateLastInstalled"] = update.LastInstalled?.ToString("o") ?? string.Empty,
         };
+    }
 
     // LastReportRun stays an ISO-8601 string: BayCentral reads it with GetString and parses it.
     private static void AddReportFields(TableEntity entity, FacilityStateSnapshot snapshot)

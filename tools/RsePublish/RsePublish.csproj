@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Release tool for RSE auto-update: uploads a new AHNiRSE.exe to autoreport/rse-release and writes
+    manifest.json, and promotes / pauses / rolls back a release. Run through deploy\Build-Release.ps1 -Publish
+    and deploy\Manage-Update.ps1 (see Program.cs). Not part of the service.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Azure.Identity" Version="1.13.2" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
+  </ItemGroup>
+
+  <!-- The manifest model is shared with the service, so both read and write the same fields. -->
+  <ItemGroup>
+    <Compile Include="..\..\Update\UpdateManifest.cs" Link="UpdateManifest.cs" />
+  </ItemGroup>
+
+</Project>

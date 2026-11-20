@@ -145,10 +145,33 @@ public class AzureStorageProvider(
         var blobPrefix = ResolveBlobFolder(_cfg.BlobPrefixes, reportType);
         var blobName = string.IsNullOrEmpty(blobPrefix) ? fileName : $"{blobPrefix}/{fileName}";
 
-        if (!string.IsNullOrWhiteSpace(_cfg.LocalUploadFolder))
-            return SaveToLocalFolder(localFilePath, blobName);
+        return await UploadBlobAsync(UploadContainer, localFilePath, blobName, ct);
+    }
 
-        var container = blobClient.GetBlobContainerClient(UploadContainer);
+    public async Task<(string Url, DateTimeOffset UploadedAt)> UploadToAsync(
+        string container,
+        string localFilePath,
+        string blobName,
+        CancellationToken ct = default)
+    {
+        if (!File.Exists(localFilePath))
+            throw new FileNotFoundException($"File to upload not found: '{localFilePath}'.");
+        if (string.IsNullOrWhiteSpace(container))
+            throw new StorageException("Upload container cannot be empty.");
+
+        return await UploadBlobAsync(container, localFilePath, blobName.Replace('\\', '/').TrimStart('/'), ct);
+    }
+
+    private async Task<(string Url, DateTimeOffset UploadedAt)> UploadBlobAsync(
+        string containerName,
+        string localFilePath,
+        string blobName,
+        CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(_cfg.LocalUploadFolder))
+            return SaveToLocalFolder(localFilePath, containerName, blobName);
+
+        var container = blobClient.GetBlobContainerClient(containerName);
         var blob = container.GetBlobClient(blobName);
         var fileSizeBytes = new FileInfo(localFilePath).Length;
 
@@ -167,7 +190,7 @@ public class AzureStorageProvider(
                     "[AzureStorage] Upload attempt {Attempt}/{Max} -> {Container}/{Blob} ({SizeMb:F2} MB).",
                     attempt,
                     maxAttempts,
-                    UploadContainer,
+                    containerName,
                     blobName,
                     fileSizeBytes / 1_048_576.0);
 
@@ -229,10 +252,10 @@ public class AzureStorageProvider(
     /// &lt;folder&gt;\&lt;ContainerName&gt;\&lt;blob path&gt; instead of uploading it, so a local run never
     /// replaces a facility's real report. The time is this PC's, not Azure's.
     /// </summary>
-    private (string Url, DateTimeOffset UploadedAt) SaveToLocalFolder(string localFilePath, string blobName)
+    private (string Url, DateTimeOffset UploadedAt) SaveToLocalFolder(string localFilePath, string containerName, string blobName)
     {
         var dest = Path.GetFullPath(Path.Combine(
-            _cfg.LocalUploadFolder, UploadContainer, blobName.Replace('/', Path.DirectorySeparatorChar)));
+            _cfg.LocalUploadFolder, containerName, blobName.Replace('/', Path.DirectorySeparatorChar)));
         Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
         File.Copy(localFilePath, dest, overwrite: true);
 

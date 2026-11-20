@@ -19,16 +19,18 @@ Code is grouped by what the service does; each folder is one namespace (`AHNiRSE
 |---|---|
 | `Program.cs` | Startup: logging, settings, service registration, blob health check |
 | `Configuration/` | Every settings class (`Settings.cs`), bound from `appsettings.json` |
-| `Reports/` | The RADET workbook: `RadetWorkbook` (build + upload), `RawReport` (raw-type backfills: the same scripts' results as Parquet), `ReportOrchestrator` (one scheduled cycle or backfill: registration check, timeout, audit, Last RADET), `ReportScripts` (which blob holds each sheet's SQL), `ReportPeriods` (each sheet's dates), `CycleContext` |
+| `Reports/` | The RADET workbook: `RadetWorkbook` (build + upload), `RawReport` (raw-type backfills: the same scripts' results as Parquet), `CustomQuery` (custom-type backfills: a Backfill app SQL script, read-only, as Parquet), `ReportOrchestrator` (one scheduled cycle or backfill: registration check, timeout, audit, Last RADET), `ReportScripts` (which blob holds each sheet's SQL), `ReportPeriods` (each sheet's dates), `CycleContext` |
 | `Reports/Sheets/` | Row models, mappers and header lists of the seven sheets |
 | `Schedule/` | `ScheduleWorker` (startup cycle, then cron cycles) and `CronSchedule` |
 | `Backfill/` | `BackfillWorker` and `ForceBackfillJobStore` (the `ForceBackfillJobs` table) |
 | `Heartbeat/` | `HeartbeatWorker`, `AzureHeartbeatService` (the `FacilityHeartbeat` row), `FacilityRunState` |
 | `Licensing/` | The verify-serial registration check: `InstallationAuthService`, `DeviceIdentity`, `AuthResultCache`, `VerifySerialClient` |
-| `Platform/` | Postgres, blob storage, Excel writer, Parquet writer (`ParquetExport`), WAT clock, memory release, health check, cycle audit, `RestartingWorker` |
+| `Platform/` | Postgres (incl. the read-only runner for custom scripts), `SqlGuard` (checks a custom script and its parameters), blob storage, Excel writer, Parquet writer (`ParquetExport`), WAT clock, memory release, health check, cycle audit, `RestartingWorker` |
 | `deploy/` | `Install.bat`, `Deploy-AHNi-RSEService.ps1` (published next to the exe), `Sync-Time.ps1` |
 | `docs/` | Background material |
-| `tools/LocalRun/` | Runs one workbook (or raw report) against a local database, saved to a folder (see Local Development) |
+| `Update/` | Auto-update: `UpdateWorker` (checks the manifest, downloads, installs), `UpdateApplier` (swaps the exe, rolls back), `UpdateStatus`, `UpdateManifest` |
+| `tools/LocalRun/` | Runs one workbook, raw report or custom script against a local database, saved to a folder, or acts as a facility's RSE for test job tables (see Local Development) |
+| `tools/RsePublish/` | Publishes and manages auto-update releases from the command line (`deploy\Build-Release.ps1 -Publish`, `deploy\Manage-Update.ps1`) |
 
 Interfaces exist only where a test or tool swaps the implementation: `IDatabaseService`,
 `IStorageProvider`, `IReportClock`.
@@ -133,6 +135,83 @@ as a Parquet file. A separate combiner downloads them, maps the headers and form
 - The job row gets `Rows` (RADET), `BlobPath` (the manifest) and `Files` (JSON array of every path).
 - When reading the files with pandas, text such as `None` (an Education value in LAMISPlus) is data,
   not a missing value; Parquet keeps it as text, but `read_csv`/`read_excel` defaults would not.
+
+### 7) Custom SQL (force backfill, report type `custom`)
+
+A SQL script saved in the Backfill app (Custom SQL tab) runs at the chosen facilities and each facility's result
+is uploaded as one Parquet file (`Reports/CustomQuery.cs`):
+
+```
+autoreport/custom-script/<name>/<sha256>.sql                       every saved version (written by the Backfill app)
+custom-reports/<script>/<request id>/<Facility>_<DATIM>.parquet    each facility's result (CustomScript:Container)
+```
+
+- The job row carries `ScriptName`, `ScriptBlob`, `ScriptSha256`, `ParamStartDate`, `ParamEndDate` and
+  `Parameters` (JSON of the script's own values). The RSE refuses a blob outside `custom-script/` and a script
+  whose SHA-256 differs from the job's, so a facility runs exactly the version that was chosen.
+- `Platform/SqlGuard.cs` checks the script: one statement, starting with SELECT or WITH, no INSERT, UPDATE,
+  DELETE, MERGE, TRUNCATE, DROP, ALTER, CREATE, GRANT, REVOKE or SELECT INTO, and none of the functions that
+  act outside the query (`pg_terminate_backend`, `dblink`, `set_config`, `lo_export`, `pg_read_file`,
+  `pg_sleep`, `query_to_xml`, `nextval` ...). Strings and comments are skipped. The Backfill app runs the same
+  checks (`backfill_app/sqlguard.py`) when a script is saved.
+- It then runs in a `READ ONLY` transaction that is always rolled back, so PostgreSQL itself refuses any write,
+  with `statement_timeout` = `CustomScript:TimeoutSeconds` (900) and at most `CustomScript:MaxRows` (2,000,000)
+  rows; more fails the job.
+- Parameters: `:facility_id` `?1`, `:start_date` `?2`, `:end_date` `?3`, `:previous_quarter_end` `?4`,
+  `:previous_previous_quarter_end` `?5` (also quoted, `'?2'`), plus any other `:name`, whose value is set
+  when the run is requested and sent untyped, so PostgreSQL types it from where it is used (text otherwise;
+  cast for another type, e.g. `:min_age::int`).
+- It runs alongside scheduled cycles like a raw report, and the Parquet footer records the script, its
+  SHA-256, the facility, the dates and every parameter value.
+- RSEs older than this release fail `custom` jobs without running anything ("not supported by this RSE").
+  Facilities without a `CustomScript` section use the defaults above.
+
+### 8) Auto-update
+
+The service updates its own `AHNiRSE.exe` from blob storage (`Update/UpdateWorker.cs`). Facilities that
+were installed before auto-update need one manual install of a release that has it; after that, new releases
+install themselves. Only the exe is replaced, never `appsettings.json`, so every new setting needs a working
+default in code.
+
+```
+autoreport/rse-release/manifest.json             the release facilities should run
+                       AHNiRSE-<version>.exe     each published exe (never replaced or deleted)
+```
+
+- Every `AutoUpdate:CheckMinutes` (5) the service reads the manifest. It installs when the manifest's
+  `version` is newer than its own (or `rollback` is true and it is different), `facilities` lists its DATIM id
+  or `all`, and `paused` is false. Versions are compared as numbers (`yyyy.M.d.Hmm`, the build time).
+- It waits a random 0-`SpreadMinutes` (10) so facilities don't all download at once, downloads the exe to
+  `<install>\update\` and refuses it unless its size, SHA-256 and file version match the manifest.
+- It installs only when no report cycle or force backfill is running and no scheduled cycle is due within
+  `QuietMinutesBeforeSchedule` (10), and holds the cycle lock so none starts meanwhile.
+- A copy of the current exe (`update\AHNiRSE-updater.exe --apply-update ...`, `Update/UpdateApplier.cs`) stops
+  the service, renames `AHNiRSE.exe` to `AHNiRSE.previous.exe`, copies the new exe in and starts the service.
+  The new version marks itself healthy after running for a minute; if that doesn't happen within
+  `HealthCheckMinutes` (5) the updater puts the previous exe back, starts it, and that version is never
+  tried again on that server (`update\failed-versions.txt`). Its log is `logs\update-<date>.log`.
+- The heartbeat row adds `UpdateStatus` (UpToDate, NotInRollout, Paused, Waiting, Downloading,
+  WaitingForIdle, Installing, Installed, RolledBack, Failed, CheckFailed, Disabled), `UpdateTargetVersion`,
+  `UpdateError`, `UpdateLastChecked` and `UpdateLastInstalled` next to `AppVersion`.
+- `AutoUpdate:Enabled=false` in a facility's `appsettings.json` switches it off there.
+
+Publishing: in the Backfill app's **RSE release** tab (choose the exe, pick pilot facilities or all, publish;
+then change who installs it, pause, resume or roll back, and follow each facility's version and update status),
+or from the command line (from a committed git tree; the manifest records the commit and who published):
+
+```powershell
+.\deploy\Build-Release.ps1 -Publish -Facilities "DATIM1,DATIM2" -Notes "what changed"   # pilot facilities
+.\deploy\Manage-Update.ps1 status
+.\deploy\Manage-Update.ps1 promote -Facilities all
+.\deploy\Manage-Update.ps1 pause        # or resume
+.\deploy\Manage-Update.ps1 rollback     # everyone back to the previous release
+```
+
+Storage access is the secrets file's connection string by default, or `-Account <storage account>` for a
+team member's own Azure sign-in (role "Storage Blob Data Contributor"). A publish is refused when its
+version isn't newer than the published one, an exe is never overwritten, and every manifest change is
+conditional on nobody having changed it since it was read. The SHA-256 protects against corrupt or
+mismatched downloads, not against someone who can write to the container; code signing can be added later.
 
 ## Report Output
 
@@ -274,9 +353,25 @@ dotnet run --project .\tools\LocalRun -- C:\path\appsettings.json C:\path\secret
 dotnet run --project .\tools\LocalRun -- C:\path\appsettings.json C:\path\secrets.json numan C:\RseOut 2026-09-30 raw
 ```
 
+A custom script (from a file; its parameters after the dates as `name=value`), saved under
+`C:\RseOut\custom-reports\`:
+
+```powershell
+dotnet run --project .\tools\LocalRun -- C:\path\appsettings.json C:\path\secrets.json numan C:\RseOut custom C:\path\script.sql 2024-01-01 2026-09-30 sex=Female min_age=15
+```
+
+`jobs <jobs table> <heartbeat table>` makes LocalRun act as the database's facility for force backfills in
+**test** tables (it refuses the live ones): it writes that facility's heartbeat row, then claims and runs its
+pending jobs once. Workbooks and raw reports are saved locally; custom results go to the
+`custom-reports-test` container so a Backfill app on the same test tables can download and combine them.
+
+```powershell
+dotnet run --project .\tools\LocalRun -- C:\path\appsettings.json C:\path\secrets.json numan C:\RseOut jobs ForceBackfillJobsLocal RseLocalHeartbeat
+```
+
 `secrets.json` holds only `{ "ConnectionStrings": { "AzureBlobStorage": "..." } }`; keep it out of git.
 The local Postgres password (user `postgres`) is read from the `LOCALRUN_DB_PASSWORD` environment variable
-(`$env:LOCALRUN_DB_PASSWORD = '...'` first) - never put it in code.
+(`$env:LOCALRUN_DB_PASSWORD = '...'` first) or PostgreSQL's own `%APPDATA%\postgresql\pgpass.conf` - never put it in code.
 
 ## Community centres
 

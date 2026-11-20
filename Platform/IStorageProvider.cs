@@ -15,4 +15,11 @@ public interface IStorageProvider
     /// </summary>
     Task<(string Url, DateTimeOffset UploadedAt)> UploadAsync(
         string localFilePath, string destinationPath, CancellationToken ct = default);
+
+    /// <summary>
+    /// Uploads a local file to exactly <paramref name="blobName"/> in <paramref name="container"/> (no
+    /// Storage:Azure:BlobPrefixes mapping). Used for custom script results, which have their own container.
+    /// </summary>
+    Task<(string Url, DateTimeOffset UploadedAt)> UploadToAsync(
+        string container, string localFilePath, string blobName, CancellationToken ct = default);
 }
