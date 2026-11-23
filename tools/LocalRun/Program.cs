@@ -32,6 +32,8 @@ using Microsoft.Extensions.Options;
 //                     LOCALRUN_DB_PASSWORD environment variable, or %APPDATA%\postgresql\pgpass.conf)
 //
 // Set LOCALRUN_SCRIPT_DIR to a folder of .sql files to run those instead of the blob's report scripts.
+// Set LOCALRUN_UPLOAD=1 to upload the workbook for real, to <container>/<Reports:WorkbookFolder>/<date>/ (TEST-RADET;
+// refused when the folder is the live RADET). Raw reports are still saved locally.
 // Absolute paths are safest: configuration files resolve against the tool's build folder.
 if (args.Length < 4)
 {
@@ -71,7 +73,17 @@ if (jobsMode)
 var blobService = new BlobServiceClient(cfg.GetConnectionString("AzureBlobStorage"));
 var azure = new AzureStorageProvider(blobService, Options.Create(storage), lf.CreateLogger<AzureStorageProvider>(), profile);
 var outputRoot = Path.GetFullPath(args[3]);
-var output = new LocalOutputStorage(azure, outputRoot, profile.UploadContainer, customToAzure: jobsMode, lf.CreateLogger("LocalOutput"));
+// LOCALRUN_UPLOAD=1: the workbook really goes up, to Reports:WorkbookFolder (TEST-RADET) - never to the live RADET folder.
+var uploadWorkbook = Environment.GetEnvironmentVariable("LOCALRUN_UPLOAD") == "1";
+if (uploadWorkbook && profile.WorkbookFolder.Equals("RADET", StringComparison.OrdinalIgnoreCase))
+{
+    Console.Error.WriteLine("LOCALRUN_UPLOAD=1 refuses Reports:WorkbookFolder=RADET (the live folder).");
+    return 1;
+}
+var output = new LocalOutputStorage(azure, outputRoot, profile.UploadContainer,
+    (container, blob) => (jobsMode && container == customSettings.Container)
+                         || (uploadWorkbook && container == profile.UploadContainer && blob.StartsWith(profile.WorkbookFolder + "/")),
+    lf.CreateLogger("LocalOutput"));
 var scripts = new ReportScripts(output, Options.Create(reports));
 var workbook = new RadetWorkbook(scripts, output, database, new ExcelExporter(lf.CreateLogger<ExcelExporter>()), profile,
     lf.CreateLogger<RadetWorkbook>());
@@ -223,8 +235,9 @@ async Task<int> RunJobsAsync()
 }
 
 /// Downloads scripts from blob storage as the service does, but "uploads" by copying to a local folder
-/// (<output folder>\<container>\...). Custom results go to Azure when customToAzure is set (jobs mode).
-sealed class LocalOutputStorage(IStorageProvider blob, string root, string container, bool customToAzure, ILogger log)
+/// (<output folder>\<container>\...). toAzure picks what really goes up: custom results in jobs mode, and the
+/// workbook (to Reports:WorkbookFolder) with LOCALRUN_UPLOAD=1.
+sealed class LocalOutputStorage(IStorageProvider blob, string root, string container, Func<string, string, bool> toAzure, ILogger log)
     : IStorageProvider
 {
     /// <summary>Blob paths answered from a local file instead (custom mode's script).</summary>
@@ -258,7 +271,7 @@ sealed class LocalOutputStorage(IStorageProvider blob, string root, string conta
 
     public Task<(string Url, DateTimeOffset UploadedAt)> UploadToAsync(
         string toContainer, string localFilePath, string blobName, CancellationToken ct = default)
-        => customToAzure
+        => toAzure(toContainer, blobName)
             ? blob.UploadToAsync(toContainer, localFilePath, blobName, ct)
             : Task.FromResult(SaveLocally(localFilePath, toContainer, blobName));
 

@@ -5,7 +5,8 @@ namespace AHNiRSE.Reports;
 
 /// <summary>
 /// The RADET workbook – seven sheets, built from the LAMISPlus report module queries and uploaded to
-/// RADET/&lt;date&gt;/&lt;facility&gt;_&lt;date&gt;.xlsx.
+/// &lt;Reports:WorkbookFolder&gt;/&lt;date&gt;/&lt;facility&gt;_&lt;datim&gt;_&lt;date&gt;.xlsx in the facility's container
+/// (WorkbookFolder is TEST-RADET for now, RADET when it goes live).
 ///
 /// Sheet 1 – RADET          (radet.sql     – typed model, strongly mapped)
 /// Sheet 2 – HTS            (hts.sql       – typed model, strongly mapped)
@@ -153,8 +154,8 @@ public sealed class RadetWorkbook(
         try
         {
             await exporter.ExportMultiSheetAsync(sheets, localOutput, ct);
-            var blobDest = $"RADET/{context.RunDate:yyyy-MM-dd}/{fileName}";
-            var (storagePath, uploadedAt) = await storage.UploadAsync(localOutput, blobDest, ct);
+            var blobDest = $"{profile.WorkbookFolder}/{context.RunDate:yyyy-MM-dd}/{fileName}";
+            var (storagePath, uploadedAt) = await storage.UploadToAsync(profile.UploadContainer, localOutput, blobDest, ct);
             TryDeleteTempFile(localOutput);
 
             logger.LogInformation(

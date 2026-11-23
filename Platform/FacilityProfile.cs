@@ -59,6 +59,11 @@ public sealed class FacilityProfile(
         ? _storage.CareContainerName
         : _storage.ContainerName;
 
+    /// <summary>Folder in UploadContainer the workbook goes to (Reports:WorkbookFolder; TEST-RADET for now).</summary>
+    public string WorkbookFolder => string.IsNullOrWhiteSpace(_reports.WorkbookFolder)
+        ? "TEST-RADET"
+        : _reports.WorkbookFolder.Trim().Trim('/');
+
     /// <summary>Workbook file name pattern ({facility}, {datim}, {date}).</summary>
     public string FileNameFormat => IsCare && !string.IsNullOrWhiteSpace(_reports.CareFileNameFormat)
         ? _reports.CareFileNameFormat
@@ -80,8 +85,8 @@ public sealed class FacilityProfile(
     /// <summary>Logs the type and what it means, once at startup.</summary>
     public void Log(ILogger logger) =>
         logger.LogInformation(
-            "[Facility] Type: {Type} (Facility:IsCommunityCentre = {Setting}) - workbooks go to '{Container}' named {Format}{Excluded}.",
-            IsCare ? "community centre (care)" : "gen-pop", IsCare, UploadContainer, FileNameFormat,
+            "[Facility] Type: {Type} (Facility:IsCommunityCentre = {Setting}) - workbooks go to '{Container}/{Folder}' named {Format}{Excluded}.",
+            IsCare ? "community centre (care)" : "gen-pop", IsCare, UploadContainer, WorkbookFolder, FileNameFormat,
             ExcludedSheets.Count > 0 ? $", without {string.Join(" / ", ExcludedSheets)}" : ", all sheets");
 
     /// <summary>A name made safe for a file or blob name: spaces and characters Windows refuses become _.</summary>

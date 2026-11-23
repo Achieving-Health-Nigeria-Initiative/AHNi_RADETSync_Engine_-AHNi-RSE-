@@ -79,7 +79,7 @@ PartitionKey = DatimId, RowKey = `<RequestId>_<yyyy-MM-dd>`. A date range is one
   or another PC with the same DatimId claimed it first, Azure refuses (412) and the job is skipped.
 - The run is the normal RADET workbook with the as-of date as "today": every sheet's `:end_date` is that
   date, start dates are the defaults (HTS: start of that fiscal year minus 3 months), and any
-  `StartDate`/`EndDate` in `Reports:Scripts` is ignored. It uploads to `RADET/<date>/<facility>_<date>.xlsx`,
+  `StartDate`/`EndDate` in `Reports:Scripts` is ignored. It uploads to `<WorkbookFolder>/<date>/<facility>_<datim>_<date>.xlsx`,
   replacing that day's file.
 - The job row gets `uploaded` (with Azure's `UploadedAt`, `Rows`, `BlobPath`) or `failed` (with `Error`).
   A backfill never changes the heartbeat row (Last RADET, Status).
@@ -118,7 +118,7 @@ as a Parquet file. A separate combiner downloads them, maps the headers and form
                                    <base>_manifest.json      (uploaded last)
 ```
 
-- `<base>` and `<container>` are the workbook's: `Numan_General_Hospital_2026_11_02` in `autoreport`,
+- `<base>` and `<container>` are the workbook's: `Numan_General_Hospital_KXoSesiSLeE_2026_11_02` in `autoreport`,
   `Jalingo_Community_Center_cmkm8UQpvWk_2026_11_02` in `community-center` (see Community centres).
 - Column types come from the PostgreSQL type of each result column, not from the values: `date` ->
   DATE, `timestamp`/`timestamptz` -> timestamp, `smallint`/`integer`/`bigint` -> int16/32/64,
@@ -229,7 +229,7 @@ mismatched downloads, not against someone who can write to the container; code s
 SQL scripts:
 
 - Every script is downloaded at the start of each cycle from the `report-script/` folder of the `autoreport`
-  blob container (`Storage:Azure:ScriptContainerName`), next to the `RADET/` folder the workbooks are uploaded
+  blob container (`Storage:Azure:ScriptContainerName`), next to the `TEST-RADET/` (later `RADET/`) folder the workbooks are uploaded
   to. Updating a blob updates every facility on its next run. The scripts are the LAMISPlus report module
   2.7.3 queries, unchanged:
 
@@ -281,7 +281,13 @@ As in the report module, any RADET status containing "stop" is reported as "Stop
 
 Destination pattern:
 
-- Blob path: `RADET/yyyy-MM-dd/<facility>_yyyy_MM_dd.xlsx`
+- Blob path: `<container>/<Reports:WorkbookFolder>/yyyy-MM-dd/<facility>_<datim>_yyyy_MM_dd.xlsx`, e.g.
+  `autoreport/TEST-RADET/2026-11-23/Numan_General_Hospital_KXoSesiSLeE_2026_11_23.xlsx`.
+- **Temporary:** `Reports:WorkbookFolder` is `TEST-RADET`, so this release's workbooks don't mix with the live
+  `RADET/` uploads of the facilities still on the previous release. It is set in code
+  (`Configuration/Settings.cs`), not in `appsettings.json`, because auto-update never replaces that file: a later
+  release changes the default back to `RADET` and every facility follows. Until then, facilities on this release
+  are missing from anything that reads `RADET/` (the combined RADET BayCentral uses).
 
 ## Auth Behavior
 
@@ -387,7 +393,7 @@ The same exe serves gen-pop facilities and community centres. One setting in `ap
 | | Gen-pop (`false`, default) | Community centre (`true`) |
 |---|---|---|
 | Container | `Storage:Azure:ContainerName` (`autoreport`) | `Storage:Azure:CareContainerName` (`community-center`) |
-| File name | `Reports:FileNameFormat` (`{facility}_{date}`) | `Reports:CareFileNameFormat` (`{facility}_{datim}_{date}`) |
+| File name | `Reports:FileNameFormat` (`{facility}_{datim}_{date}`) | `Reports:CareFileNameFormat` (`{facility}_{datim}_{date}`) |
 | Sheets | all 7 | without `CareExcludedSheets`: RADET, HTS, Index, Prep, AHD (as community-centre uploads have always been) |
 
 The release script builds both packages (`AHNi-RSE-<version>.zip` and `AHNi-RSE-<version>-community-centre.zip`,

@@ -177,7 +177,7 @@ public class ReportOrchestrator(
 
     /// <summary>
     /// Runs one force backfill as of <paramref name="asOfDate"/>: the RADET workbook, uploaded to
-    /// RADET/&lt;asOfDate&gt;/ (report type default), the raw report, uploaded to raw-report/&lt;asOfDate&gt;/
+    /// &lt;Reports:WorkbookFolder&gt;/&lt;asOfDate&gt;/ (report type default), the raw report, uploaded to raw-report/&lt;asOfDate&gt;/
     /// (report type raw), or a custom script's result (report type custom, <paramref name="custom"/>; see
     /// CustomQuery). It never touches the heartbeat (Last RADET, Status). Throws when nothing was uploaded, so
     /// the caller can mark the job failed.

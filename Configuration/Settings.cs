@@ -88,7 +88,7 @@ public class AuthSettings
 
 /// <summary>
 /// RADET backfills requested from BayCentral (Administration → Force Backfill). Each job asks for
-/// the workbook as of one past date; it is uploaded to RADET/&lt;date&gt;/ like a scheduled run.
+/// the workbook as of one past date; it is uploaded to &lt;Reports:WorkbookFolder&gt;/&lt;date&gt;/ like a scheduled run.
 /// </summary>
 public class ForceBackfillSettings
 {
@@ -165,7 +165,15 @@ public class ReportSettings
     /// Gen-pop workbook file name (without .xlsx). {facility} = facility name with spaces as underscores,
     /// {datim} = DATIM ID, {date} = yyyy_MM_dd.
     /// </summary>
-    public string FileNameFormat { get; set; } = "{facility}_{date}";
+    public string FileNameFormat { get; set; } = "{facility}_{datim}_{date}";
+
+    /// <summary>
+    /// Folder the workbook goes to in the facility's container: &lt;WorkbookFolder&gt;/&lt;date&gt;/&lt;file&gt;.xlsx.
+    /// TEMPORARY: TEST-RADET while this release is tried alongside the live RADET/ uploads. Kept out of
+    /// appsettings.json on purpose - auto-update never replaces that file, so the default here is what a later
+    /// release changes back to "RADET" for every facility at once.
+    /// </summary>
+    public string WorkbookFolder { get; set; } = "TEST-RADET";
 
     /// <summary>Community-centre ("care") workbook file name; same placeholders.</summary>
     public string CareFileNameFormat { get; set; } = "{facility}_{datim}_{date}";

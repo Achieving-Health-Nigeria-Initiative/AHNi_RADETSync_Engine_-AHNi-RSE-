@@ -13,7 +13,7 @@ public sealed record ForceBackfillJob(
 /// <summary>What a force backfill job produces (the job row's ReportType; empty means default).</summary>
 public static class BackfillReportType
 {
-    /// <summary>The RADET workbook, uploaded to RADET/&lt;date&gt;/ (replaces that date's file).</summary>
+    /// <summary>The RADET workbook, uploaded to &lt;Reports:WorkbookFolder&gt;/&lt;date&gt;/ (replaces that date's file).</summary>
     public const string Default = "default";
 
     /// <summary>The scripts' raw results as Parquet files in raw-report/&lt;date&gt;/ (see RawReport).</summary>
