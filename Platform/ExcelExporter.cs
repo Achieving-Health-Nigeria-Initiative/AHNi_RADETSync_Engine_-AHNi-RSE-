@@ -8,7 +8,18 @@ namespace AHNiRSE.Platform;
 public class ExcelExporter(ILogger<ExcelExporter> logger)
 {
     private static readonly XLColor HeaderFg = XLColor.Black;
-    private static readonly XLColor AltRowFill = XLColor.FromHtml("#F2F2F2");
+
+    /// <summary>Every date is shown as yyyy-mm-dd, whatever the PC's regional settings (Excel's built-in short date follows them).</summary>
+    private const string DateFormat = "yyyy-mm-dd";
+
+    // Sheets are plain: bold header row (not wrapped); no filter, no fills, default column widths.
+    private static void StyleHeader(IXLCell cell)
+    {
+        cell.Style.Font.Bold = true;
+        cell.Style.Font.FontColor = HeaderFg;
+        cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        cell.Style.Alignment.WrapText = false;
+    }
 
     /// <summary>
     /// Writes every sheet in <paramref name="sheets"/> into one .xlsx workbook.
@@ -54,7 +65,6 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
 
             WriteHeaders(ws, props, sheet.HeaderMap);
             WriteRows(ws, rows, props);
-            FormatWorksheet(ws, rows.Count);
         }
 
         wb.SaveAs(outputPath);
@@ -67,9 +77,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
     // ── Private: write a DataTable directly (no model class required) ─────────
     /// <summary>
     /// Writes <paramref name="dt"/> to <paramref name="ws"/>.
-    /// Row 1 = DataColumn.ColumnName values (bold, centred).
-    /// Rows 2+ = data with alternating row shading.
-    /// Auto-filter and column width are applied.
+    /// Row 1 = DataColumn.ColumnName values (bold, centred, not wrapped); rows 2+ = data (dates as yyyy-mm-dd).
     /// </summary>
     private static void WriteDataTableSheet(IXLWorksheet ws, DataTable dt)
     {
@@ -78,9 +86,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
         {
             var cell = ws.Cell(1, col + 1);
             cell.Value = dt.Columns[col].ColumnName;
-            cell.Style.Font.Bold = true;
-            cell.Style.Font.FontColor = HeaderFg;
-            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            StyleHeader(cell);
         }
 
         // ── Data rows ─────────────────────────────────────────────────────────
@@ -97,6 +103,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
                 {
                     null or DBNull => string.Empty,
                     DateTime dt2 => dt2,
+                    DateOnly d => d.ToDateTime(TimeOnly.MinValue),
                     bool b => b,
                     int i => i,
                     long l => l,
@@ -105,16 +112,11 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
                     float fl => fl,
                     _ => raw.ToString() ?? string.Empty
                 };
+
+                if (raw is DateTime or DateOnly)
+                    cell.Style.NumberFormat.Format = DateFormat;
             }
-
-            if (rowIdx % 2 == 1)
-                ws.Row(rowIdx + 2).Style.Fill.BackgroundColor = AltRowFill;
         }
-
-        // ── Format ────────────────────────────────────────────────────────────
-        ws.RangeUsed()?.SetAutoFilter();
-        foreach (var c in ws.ColumnsUsed())
-            c.AdjustToContents(1, Math.Max(dt.Rows.Count + 1, 2), 10, 50);
     }
 
     // ── Typed-sheet helpers ───────────────────────────────────────────────────
@@ -136,9 +138,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
 
             var cell = ws.Cell(1, col + 1);
             cell.Value = header;
-            cell.Style.Font.Bold = true;
-            cell.Style.Font.FontColor = HeaderFg;
-            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            StyleHeader(cell);
         }
     }
 
@@ -152,7 +152,6 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
             return;
 
         WriteDictionaryHeaders(ws, headerMap);
-        FormatWorksheet(ws, 0);
     }
 
     private static void WriteDictionaryHeaders(
@@ -164,9 +163,7 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
         {
             var cell = ws.Cell(1, col++);
             cell.Value = string.IsNullOrWhiteSpace(entry.Value) ? entry.Key : entry.Value;
-            cell.Style.Font.Bold = true;
-            cell.Style.Font.FontColor = HeaderFg;
-            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            StyleHeader(cell);
         }
     }
 
@@ -200,20 +197,12 @@ public class ExcelExporter(ILogger<ExcelExporter> logger)
                     _ => value.ToString() ?? string.Empty
                 };
 
-                if (prop.Name == "MonthsOfArvRefill" && value is decimal)
+                if (value is DateTime or DateOnly)
+                    cell.Style.NumberFormat.Format = DateFormat;
+                else if (prop.Name == "MonthsOfArvRefill" && value is decimal)
                     cell.Style.NumberFormat.Format = "0.0";
             }
-
-            if (rowIndex % 2 == 1)
-                ws.Row(rowIndex + 2).Style.Fill.BackgroundColor = AltRowFill;
         }
-    }
-
-    private static void FormatWorksheet(IXLWorksheet ws, int rowCount)
-    {
-        ws.RangeUsed()?.SetAutoFilter();
-        foreach (var col in ws.ColumnsUsed())
-            col.AdjustToContents(1, rowCount + 1, 10, 50);
     }
 
     private static void EnsureDirectory(string outputPath)
