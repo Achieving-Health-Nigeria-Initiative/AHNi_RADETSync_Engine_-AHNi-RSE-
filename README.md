@@ -26,7 +26,7 @@ Code is grouped by what the service does; each folder is one namespace (`AHNiRSE
 | `Heartbeat/` | `HeartbeatWorker`, `AzureHeartbeatService` (the `FacilityHeartbeat` row), `FacilityRunState` |
 | `Licensing/` | The verify-serial registration check: `InstallationAuthService`, `DeviceIdentity`, `AuthResultCache`, `VerifySerialClient` |
 | `Platform/` | Postgres (incl. the read-only runner for custom scripts), `SqlGuard` (checks a custom script and its parameters), blob storage, Excel writer, Parquet writer (`ParquetExport`), WAT clock, memory release, health check, cycle audit, `RestartingWorker` |
-| `deploy/` | `Install.bat`, `Deploy-AHNi-RSEService.ps1` (published next to the exe), `Sync-Time.ps1` |
+| `deploy/` | `Build-Release.ps1`, `Install.bat`, `Deploy-AHNi-RSEService.ps1` (published next to the exe), `Run-Test.bat` (test packages), `Sync-Time.ps1` |
 | `Update/` | Auto-update: `UpdateWorker` (checks the manifest, downloads, installs), `UpdateApplier` (swaps the exe, rolls back), `UpdateStatus`, `UpdateManifest` |
 | `tools/LocalRun/` | Runs one workbook, raw report or custom script against a local database, saved to a folder, or acts as a facility's RSE for test job tables (see Local Development) |
 | `tools/RsePublish/` | Publishes and manages auto-update releases from the command line (`deploy\Build-Release.ps1 -Publish`, `deploy\Manage-Update.ps1`) |
@@ -229,7 +229,7 @@ mismatched downloads, not against someone who can write to the container; code s
 SQL scripts:
 
 - Every script is downloaded at the start of each cycle from the `report-script/` folder of the `autoreport`
-  blob container (`Storage:Azure:ScriptContainerName`), next to the `TEST-RADET/` (later `RADET/`) folder the workbooks are uploaded
+  blob container (`Storage:Azure:ScriptContainerName`), next to the `RADET/` folder the workbooks are uploaded
   to. Updating a blob updates every facility on its next run. The scripts are the LAMISPlus report module
   2.7.3 queries, unchanged:
 
@@ -282,12 +282,12 @@ As in the report module, any RADET status containing "stop" is reported as "Stop
 Destination pattern:
 
 - Blob path: `<container>/<Reports:WorkbookFolder>/yyyy-MM-dd/<facility>_<datim>_yyyy_MM_dd.xlsx`, e.g.
-  `autoreport/TEST-RADET/2026-11-23/Numan_General_Hospital_KXoSesiSLeE_2026_11_23.xlsx`.
-- **Temporary:** `Reports:WorkbookFolder` is `TEST-RADET`, so this release's workbooks don't mix with the live
-  `RADET/` uploads of the facilities still on the previous release. It is set in code
-  (`Configuration/Settings.cs`), not in `appsettings.json`, because auto-update never replaces that file: a later
-  release changes the default back to `RADET` and every facility follows. Until then, facilities on this release
-  are missing from anything that reads `RADET/` (the combined RADET BayCentral uses).
+  `autoreport/RADET/2026-11-23/Numan_General_Hospital_KXoSesiSLeE_2026_11_23.xlsx` (community centres:
+  `community-center/RADET/...`).
+- `Reports:WorkbookFolder` (`RADET`) is set in code (`Configuration/Settings.cs`), not in `appsettings.json`,
+  because auto-update never replaces that file: a change of the default reaches every facility with the next
+  release. Test packages set `TEST-RADET` in their own `appsettings.json` (see Test packages).
+- Sheets are plain: a bold, unwrapped header row; no filter, fills or set column widths; dates as `yyyy-mm-dd`.
 
 ## Auth Behavior
 
@@ -437,6 +437,27 @@ backfill jobs report it as `AppVersion`, so BayCentral shows which build each fa
 
 - `appsettings.Development*.json`, `tools\` and `deploy\*.json` are not included
 - Release PDB symbols are disabled
+
+### Test packages (run beside the installed service)
+
+```powershell
+.\deploy\Build-Release.ps1 -Test
+```
+
+writes `AHNi-RSE-<version>-test.zip` and `AHNi-RSE-<version>-community-centre-test.zip`, for trying this build at
+a facility while its installed (older) service keeps running untouched. They hold `AHNiRSE.exe`, `appsettings.json`
+and `Run-Test.bat` - no `Install.bat`, which would replace the service. Unzip into a folder of its own (e.g.
+`C:\AHNi-RSE-Test`) and double-click `Run-Test.bat`: the RSE runs in that window until it is closed, with logs in
+`<folder>\logs`. Everything works as in the service - scheduled cycles, force backfills (workbook, raw, custom SQL)
+from the Backfill app - except that, not being the Windows service, it never installs an update.
+
+- Workbooks go to `TEST-RADET/`: the script adds `Reports:WorkbookFolder` = `TEST-RADET` to the package's
+  `appsettings.json` (installed releases use the code default, `RADET`).
+- Its staging folder is `C:\Reports\StagingTest`, so it shares no files with the service.
+- It uses the live `ForceBackfillJobs` and `FacilityHeartbeat` tables. The old service has no force backfill, so
+  every job is the test build's; both write the facility's heartbeat row, so the version and last report BayCentral
+  shows switch between the two while both run.
+- Both run the scheduled cycles, so the facility's database does the RADET queries twice at those times.
 
 ## Windows Service Deployment
 

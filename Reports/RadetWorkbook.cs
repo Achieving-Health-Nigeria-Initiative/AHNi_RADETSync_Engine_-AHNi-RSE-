@@ -6,7 +6,7 @@ namespace AHNiRSE.Reports;
 /// <summary>
 /// The RADET workbook – seven sheets, built from the LAMISPlus report module queries and uploaded to
 /// &lt;Reports:WorkbookFolder&gt;/&lt;date&gt;/&lt;facility&gt;_&lt;datim&gt;_&lt;date&gt;.xlsx in the facility's container
-/// (WorkbookFolder is TEST-RADET for now, RADET when it goes live).
+/// (WorkbookFolder is RADET; TEST-RADET in test packages).
 ///
 /// Sheet 1 – RADET          (radet.sql     – typed model, strongly mapped)
 /// Sheet 2 – HTS            (hts.sql       – typed model, strongly mapped)

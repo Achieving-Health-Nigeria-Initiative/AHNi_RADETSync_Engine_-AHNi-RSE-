@@ -32,8 +32,8 @@ using Microsoft.Extensions.Options;
 //                     LOCALRUN_DB_PASSWORD environment variable, or %APPDATA%\postgresql\pgpass.conf)
 //
 // Set LOCALRUN_SCRIPT_DIR to a folder of .sql files to run those instead of the blob's report scripts.
-// Set LOCALRUN_UPLOAD=1 to upload the workbook for real, to <container>/<Reports:WorkbookFolder>/<date>/ (TEST-RADET;
-// refused when the folder is the live RADET). Raw reports are still saved locally.
+// Set LOCALRUN_UPLOAD=1 to upload the workbook for real, to <container>/TEST-RADET/<date>/ (never the live RADET
+// folder). Raw reports are still saved locally.
 // Absolute paths are safest: configuration files resolve against the tool's build folder.
 if (args.Length < 4)
 {
@@ -48,7 +48,11 @@ var cfg = new ConfigurationBuilder()
 var storage = cfg.GetSection("Storage").Get<StorageSettings>()!;
 storage.Azure.TempDownloadPath = Path.Combine(args[3], "_scripts");
 var reports = cfg.GetSection("Reports").Get<ReportSettings>()!;
-var db = cfg.GetSection("Database").Get<DatabaseSettings>()!;
+// LOCALRUN_UPLOAD=1: the workbook really goes up - to TEST-RADET, whatever the settings say (RADET is live).
+var uploadWorkbook = Environment.GetEnvironmentVariable("LOCALRUN_UPLOAD") == "1";
+if (uploadWorkbook)
+    reports.WorkbookFolder = "TEST-RADET";
+var db =cfg.GetSection("Database").Get<DatabaseSettings>()!;
 var customSettings = cfg.GetSection("CustomScript").Get<CustomScriptSettings>() ?? new CustomScriptSettings();
 // The local Postgres password comes from the LOCALRUN_DB_PASSWORD environment variable or, without it, from
 // PostgreSQL's own password file (%APPDATA%\postgresql\pgpass.conf) - never from code.
@@ -73,8 +77,6 @@ if (jobsMode)
 var blobService = new BlobServiceClient(cfg.GetConnectionString("AzureBlobStorage"));
 var azure = new AzureStorageProvider(blobService, Options.Create(storage), lf.CreateLogger<AzureStorageProvider>(), profile);
 var outputRoot = Path.GetFullPath(args[3]);
-// LOCALRUN_UPLOAD=1: the workbook really goes up, to Reports:WorkbookFolder (TEST-RADET) - never to the live RADET folder.
-var uploadWorkbook = Environment.GetEnvironmentVariable("LOCALRUN_UPLOAD") == "1";
 if (uploadWorkbook && profile.WorkbookFolder.Equals("RADET", StringComparison.OrdinalIgnoreCase))
 {
     Console.Error.WriteLine("LOCALRUN_UPLOAD=1 refuses Reports:WorkbookFolder=RADET (the live folder).");

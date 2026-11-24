@@ -29,11 +29,21 @@
 #  Storage access: the secrets file's connection string, or -Account <storage account> to use your own
 #  Azure sign-in (needs "Storage Blob Data Contributor"); with -Account and no secrets file only the exe is
 #  built and published, without install packages. The git tree must be committed; the commit is recorded.
+#
+#  TEST PACKAGES (-Test): AHNi-RSE-<version>-test.zip and ...-community-centre-test.zip, to run beside the
+#  facility's installed service without touching it. No Install.bat or service script; Run-Test.bat starts
+#  AHNiRSE.exe in a console window (run that way it never installs updates). It uses its own staging folder
+#  (C:\Reports\StagingTest) and its appsettings.json sets Reports:WorkbookFolder to TEST-RADET, so its
+#  workbooks stay out of the live RADET folder. Heartbeat and force backfill
+#  tables are the live ones: the old service has no force backfill, and the two may overwrite each other's
+#  heartbeat row while both run.
+#    .\deploy\Build-Release.ps1 -Test
 ##############################################################################
 param(
     [string]$Secrets = "",
     [string]$OutDir  = "",
     [string]$Version = "",
+    [switch]$Test,
     [switch]$Publish,
     [string]$Facilities = "",
     [string]$Notes = "",
@@ -49,6 +59,13 @@ if (-not $OutDir)  { $OutDir  = Join-Path (Split-Path $repo -Parent) 'releases' 
 $haveSecrets = Test-Path $Secrets
 if (-not $haveSecrets -and -not ($Publish -and $Account)) {
     throw "Secrets file not found: $Secrets (copy deploy\release.secrets.example.json there and fill it in)."
+}
+if ($Test -and $Publish) { throw "-Test builds packages to run by hand; it can't be combined with -Publish." }
+# Reports:WorkbookFolder comes from code (RADET); the repo's appsettings.json must not set it - installed facilities
+# keep their appsettings.json across auto-updates, so a value there would outlive any later change. Test packages
+# get TEST-RADET in their own appsettings.json below.
+if ((Get-Content (Join-Path $repo 'appsettings.json') -Raw) -match '"WorkbookFolder"\s*:') {
+    throw "Remove Reports:WorkbookFolder from appsettings.json (it is set in Configuration\Settings.cs)."
 }
 if ($haveSecrets) {
     $s = Get-Content $Secrets -Raw | ConvertFrom-Json
@@ -137,6 +154,23 @@ try {
     if ($text -notmatch '"IsCommunityCentre"\s*:\s*false')       { $problems += 'Facility:IsCommunityCentre is not false in the repo appsettings.json (the gen-pop package needs false)' }
     if ($problems) { throw "Package not built:`n  - " + ($problems -join "`n  - ") }
 
+    # -- Test package: runs by hand beside the installed service ------------------------------------
+    if ($Test) {
+        # Install.bat would replace the facility's service (and remove the legacy one): not in a test package.
+        foreach ($f in 'Install.bat', 'Deploy-AHNi-RSEService.ps1') {
+            $p = Join-Path $stage $f
+            if (Test-Path $p) { Remove-Item $p -Force }
+        }
+        Copy-Item (Join-Path $PSScriptRoot 'Run-Test.bat') $stage
+        # Its own staging folder, so it never shares downloaded scripts or workbooks with the service.
+        $text = [regex]::Replace($text, '("TempDownloadPath"\s*:\s*")[^"]*(")', '${1}C:\\Reports\\StagingTest${2}')
+        if ($text -notmatch '"TempDownloadPath"\s*:\s*"C:\\\\Reports\\\\StagingTest"') { throw 'Could not set TempDownloadPath in the test package.' }
+        # Its workbooks go to TEST-RADET, never the live RADET folder.
+        $text = [regex]::Replace($text, '("Reports"\s*:\s*\{)', ('${1}' + "`r`n" + '    "WorkbookFolder": "TEST-RADET", // test package: workbooks stay out of the live RADET folder'), 1)
+        if ($text -notmatch '"WorkbookFolder"\s*:\s*"TEST-RADET"') { throw 'Could not set Reports:WorkbookFolder in the test package.' }
+        [IO.File]::WriteAllText($settingsPath, $text, (New-Object Text.UTF8Encoding($false)))
+    }
+
     # -- Community-centre copy: the same files with Facility:IsCommunityCentre = true -------------
     $careStage = Join-Path $OutDir 'AHNi-RSE-publish-community-centre'
     if (Test-Path $careStage) { Remove-Item $careStage -Recurse -Force }
@@ -148,9 +182,10 @@ try {
 
     # -- Zip -----------------------------------------------------------------
     $exeVersion = (Get-Item (Join-Path $stage 'AHNiRSE.exe')).VersionInfo.ProductVersion -replace '\+.*$', ''
+    $suffix = if ($Test) { '-test' } else { '' }
     $packages = @(
-        @{ Stage = $stage;     Zip = Join-Path $OutDir "AHNi-RSE-$exeVersion.zip";                  Kind = 'gen-pop facilities' },
-        @{ Stage = $careStage; Zip = Join-Path $OutDir "AHNi-RSE-$exeVersion-community-centre.zip"; Kind = 'community centres' }
+        @{ Stage = $stage;     Zip = Join-Path $OutDir "AHNi-RSE-$exeVersion$suffix.zip";                  Kind = 'gen-pop facilities' },
+        @{ Stage = $careStage; Zip = Join-Path $OutDir "AHNi-RSE-$exeVersion-community-centre$suffix.zip"; Kind = 'community centres' }
     )
     Write-Host ""
     foreach ($p in $packages) {
@@ -162,7 +197,13 @@ try {
     $files = (Get-ChildItem $stage -Recurse -File | ForEach-Object Name) -join ', '
     Write-Host "  version $exeVersion - single self-contained AHNiRSE.exe ($([math]::Round($exe.Length / 1MB)) MB), live settings filled in"
     Write-Host "  contents: $files"
-    Write-Host "  Unzip the right package on the facility server and double-click Install.bat."
+    if ($Test) {
+        Write-Host "  TEST build: unzip into its own folder (e.g. C:\AHNi-RSE-Test) and double-click Run-Test.bat."
+        Write-Host "  It runs in that window beside the installed service and uploads to TEST-RADET."
+    } else {
+        Write-Host "  Unzip the right package on the facility server and double-click Install.bat."
+        Write-Host "  Workbooks go to the live RADET folder."
+    }
 
     if ($Publish) {
         # The bare exe (no settings, no secrets) is what auto-update installs.

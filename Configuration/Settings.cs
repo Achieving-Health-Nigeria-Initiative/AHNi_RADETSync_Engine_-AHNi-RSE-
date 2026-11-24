@@ -169,11 +169,11 @@ public class ReportSettings
 
     /// <summary>
     /// Folder the workbook goes to in the facility's container: &lt;WorkbookFolder&gt;/&lt;date&gt;/&lt;file&gt;.xlsx.
-    /// TEMPORARY: TEST-RADET while this release is tried alongside the live RADET/ uploads. Kept out of
-    /// appsettings.json on purpose - auto-update never replaces that file, so the default here is what a later
-    /// release changes back to "RADET" for every facility at once.
+    /// RADET, the live folder. Test packages (deploy\Build-Release.ps1 -Test) set TEST-RADET in their own
+    /// appsettings.json. Left out of the installed appsettings.json on purpose: auto-update never replaces that
+    /// file, so a change of this default reaches every facility with the next release.
     /// </summary>
-    public string WorkbookFolder { get; set; } = "TEST-RADET";
+    public string WorkbookFolder { get; set; } = "RADET";
 
     /// <summary>Community-centre ("care") workbook file name; same placeholders.</summary>
     public string CareFileNameFormat { get; set; } = "{facility}_{datim}_{date}";

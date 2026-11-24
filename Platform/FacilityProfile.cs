@@ -59,9 +59,9 @@ public sealed class FacilityProfile(
         ? _storage.CareContainerName
         : _storage.ContainerName;
 
-    /// <summary>Folder in UploadContainer the workbook goes to (Reports:WorkbookFolder; TEST-RADET for now).</summary>
+    /// <summary>Folder in UploadContainer the workbook goes to (Reports:WorkbookFolder, RADET by default).</summary>
     public string WorkbookFolder => string.IsNullOrWhiteSpace(_reports.WorkbookFolder)
-        ? "TEST-RADET"
+        ? "RADET"
         : _reports.WorkbookFolder.Trim().Trim('/');
 
     /// <summary>Workbook file name pattern ({facility}, {datim}, {date}).</summary>
