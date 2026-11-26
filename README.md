@@ -189,6 +189,11 @@ autoreport/rse-release/manifest.json             the release facilities should r
   The new version marks itself healthy after running for a minute; if that doesn't happen within
   `HealthCheckMinutes` (5) the updater puts the previous exe back, starts it, and that version is never
   tried again on that server (`update\failed-versions.txt`). Its log is `logs\update-<date>.log`.
+- The heartbeat row carries `DateStyleVersion`, the build's date-style version (`yyyy.M.d.Hmm`, e.g.
+  `2026.11.24.1657`), and `PackageType` (`live`). Older RSE builds report `AppVersion` 1.0.0.0 and no
+  `DateStyleVersion`, so a facility whose row has no `DateStyleVersion` is still on an old RSE. A test package
+  writes `TestAppVersion`, `TestDateStyleVersion` and `TestLastSeen` instead, so running one beside the installed
+  service never makes that facility look updated.
 - The heartbeat row adds `UpdateStatus` (UpToDate, NotInRollout, Paused, Waiting, Downloading,
   WaitingForIdle, Installing, Installed, RolledBack, Failed, CheckFailed, Disabled), `UpdateTargetVersion`,
   `UpdateError`, `UpdateLastChecked` and `UpdateLastInstalled` next to `AppVersion`.

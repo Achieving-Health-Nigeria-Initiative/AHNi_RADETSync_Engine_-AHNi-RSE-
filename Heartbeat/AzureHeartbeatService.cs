@@ -21,8 +21,11 @@ namespace AHNiRSE.Heartbeat;
 ///   RowKey       = "latest" (merged in place — O(1) read from BayCentral)
 ///
 /// WRITERS (both merge, so neither blanks the other's fields):
-///   • PingAsync, every IntervalMinutes — facility identity, MachineName, AppVersion, Status,
-///     LastSeen, OfflineThresholdMinutes, LastReportError.
+///   • PingAsync, every IntervalMinutes — facility identity, MachineName, AppVersion, DateStyleVersion,
+///     PackageType, Status, LastSeen, OfflineThresholdMinutes, LastReportError. DateStyleVersion is the
+///     build's yyyy.M.d.Hmm version (older RSE builds, AppVersion 1.0.0.0, never write it). A test package
+///     (Reports:WorkbookFolder TEST-RADET) writes TestAppVersion / TestDateStyleVersion / TestLastSeen instead,
+///     so it never changes the installed service's version fields.
 ///   • RecordReportUploadAsync, right after a report upload — the same fields plus LastReportRun
 ///     (Azure's upload time), LastReportRows and LastReportUrl. The ping only resends these when
 ///     that write failed, so a restart (empty in-memory state) never wipes Last RADET.
@@ -42,6 +45,10 @@ public sealed class AzureHeartbeatService
     private readonly ILogger<AzureHeartbeatService> _logger;
     private readonly string _machineName = Environment.MachineName;
     private readonly string _appVersion;
+    private readonly string _dateStyleVersion;
+    // A test package (workbooks to TEST-RADET) runs beside the installed service and writes the same row, so it
+    // reports its version in TestAppVersion / TestDateStyleVersion and leaves AppVersion / DateStyleVersion to the service.
+    private readonly bool _isTestPackage;
     private static readonly Random _jitter = new();
 
     // ── Cooldown ──────────────────────────────────────────────────────────────
@@ -56,6 +63,7 @@ public sealed class AzureHeartbeatService
         TableServiceClient tableService,
         FacilityRunState state,
         UpdateStatus updateStatus,
+        FacilityProfile profile,
         IOptions<HeartbeatSettings> options,
         ILogger<AzureHeartbeatService> logger)
     {
@@ -64,8 +72,30 @@ public sealed class AzureHeartbeatService
         _cfg = options.Value;
         _logger = logger;
         _table = tableService.GetTableClient(_cfg.TableName);
-        _appVersion = typeof(AzureHeartbeatService).Assembly
-            .GetName().Version?.ToString() ?? "unknown";
+        var version = typeof(AzureHeartbeatService).Assembly.GetName().Version;
+        _appVersion = version?.ToString() ?? "unknown";
+        _dateStyleVersion = DateStyleVersionOf(version);
+        _isTestPackage = !profile.WorkbookFolder.Equals("RADET", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The version if it is date-style - yyyy.M.d.Hmm, set at build time (e.g. 2026.11.24.1657 = built
+    /// 24 Nov 2026 at 16:57) - else empty (e.g. 1.0.0.0, or a version fixed with -p:Version).
+    /// </summary>
+    public static string DateStyleVersionOf(Version? v)
+    {
+        if (v is null || v.Major < 2000 || v.Minor is < 1 or > 12 || v.Build is < 1 or > 31 || v.Revision < 0)
+            return string.Empty;
+        if (v.Revision / 100 > 23 || v.Revision % 100 > 59) return string.Empty;
+        try
+        {
+            _ = new DateTime(v.Major, v.Minor, v.Build); // rejects e.g. 31 February
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return string.Empty;
+        }
+        return v.ToString();
     }
 
     public async Task PingAsync(CancellationToken ct = default)
@@ -213,13 +243,12 @@ public sealed class AzureHeartbeatService
     private TableEntity StatusEntity(FacilityStateSnapshot snapshot)
     {
         var update = _update.Snapshot();
-        return new(snapshot.DatimId, "latest")
+        var entity = new TableEntity(snapshot.DatimId, "latest")
         {
             ["FacilityName"] = snapshot.FacilityName,
             ["DatimId"] = snapshot.DatimId,
             ["State"] = snapshot.State,
             ["MachineName"] = _machineName,
-            ["AppVersion"] = _appVersion,
             ["Status"] = snapshot.HasError ? "error" : "online",
             ["LastSeen"] = DateTimeOffset.UtcNow,
             ["OfflineThresholdMinutes"] = _cfg.OfflineThresholdMinutes,
@@ -232,6 +261,23 @@ public sealed class AzureHeartbeatService
             ["UpdateLastChecked"] = update.LastChecked?.ToString("o") ?? string.Empty,
             ["UpdateLastInstalled"] = update.LastInstalled?.ToString("o") ?? string.Empty,
         };
+
+        // Which RSE is running. DateStyleVersion is the build's yyyy.M.d.Hmm version (this RSE); older builds
+        // (AppVersion 1.0.0.0) never write it, so a row without it is still on an old RSE. A test package
+        // writes the Test* fields instead, so it cannot make the installed service look updated.
+        if (_isTestPackage)
+        {
+            entity["TestAppVersion"] = _appVersion;
+            entity["TestDateStyleVersion"] = _dateStyleVersion;
+            entity["TestLastSeen"] = DateTimeOffset.UtcNow;
+        }
+        else
+        {
+            entity["AppVersion"] = _appVersion;
+            entity["DateStyleVersion"] = _dateStyleVersion;
+            entity["PackageType"] = "live";
+        }
+        return entity;
     }
 
     // LastReportRun stays an ISO-8601 string: BayCentral reads it with GetString and parses it.

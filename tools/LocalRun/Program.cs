@@ -172,7 +172,8 @@ async Task<int> RunJobsAsync()
     if (facility.IsEmpty)
         throw new InvalidOperationException("The facility could not be read from the database.");
     var tables = new TableServiceClient(cfg.GetConnectionString("AzureBlobStorage"));
-    var version = typeof(CustomQuery).Assembly.GetName().Version?.ToString() ?? "local";
+    var assemblyVersion = typeof(CustomQuery).Assembly.GetName().Version;
+    var version = assemblyVersion?.ToString() ?? "local";
 
     // The heartbeat row the Backfill app reads its facility list from (BayCentral's columns).
     var heartbeat = tables.GetTableClient(heartbeatTable);
@@ -187,6 +188,10 @@ async Task<int> RunJobsAsync()
         ["OfflineThresholdMinutes"] = 60,
         ["MachineName"] = Environment.MachineName,
         ["AppVersion"] = Environment.GetEnvironmentVariable("LOCALRUN_APP_VERSION") is { Length: > 0 } v ? v : version,
+        ["DateStyleVersion"] = Environment.GetEnvironmentVariable("LOCALRUN_APP_VERSION") is { Length: > 0 } dv
+            ? AHNiRSE.Heartbeat.AzureHeartbeatService.DateStyleVersionOf(Version.TryParse(dv, out var parsed) ? parsed : null)
+            : AHNiRSE.Heartbeat.AzureHeartbeatService.DateStyleVersionOf(assemblyVersion),
+        ["PackageType"] = "local",
         ["UpdateStatus"] = Environment.GetEnvironmentVariable("LOCALRUN_UPDATE_STATUS") ?? "UpToDate",
         ["UpdateTargetVersion"] = Environment.GetEnvironmentVariable("LOCALRUN_UPDATE_TARGET") ?? string.Empty,
         ["UpdateError"] = Environment.GetEnvironmentVariable("LOCALRUN_UPDATE_ERROR") ?? string.Empty,
