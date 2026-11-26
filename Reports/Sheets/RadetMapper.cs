@@ -259,6 +259,7 @@ public static class RadetMapper
         var prefix = state?.Trim().ToLower() switch
         {
             "adamawa" => "ad ",
+            "bauchi" => "ba ",
             "borno" => "bo ",
             "taraba" => "ta ",
             "yobe" => "yo ",
