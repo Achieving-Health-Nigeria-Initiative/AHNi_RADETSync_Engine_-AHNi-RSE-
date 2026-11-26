@@ -250,5 +250,8 @@ public static class SheetHeaders
             ["ClientAddress"] = "clientAddress",
             ["Latitude"] = "latitude",
             ["Longitude"] = "longitude",
+            ["SpokeSiteId"] = "spokesiteid",
+            ["SpokeSiteName"] = "spokesitename",
+            ["SpokeSiteCheck"] = "spokesitecheck",
         };
 }

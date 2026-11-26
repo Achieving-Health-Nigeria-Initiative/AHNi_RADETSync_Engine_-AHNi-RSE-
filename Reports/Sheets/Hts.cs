@@ -48,4 +48,9 @@ public class Hts
     // ── Geolocation ───────────────────────────────────────────────────────────
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
+
+    // ── AHNi spoke sites (hts.sql: spoke ID at the end of the client code) ──
+    public string? SpokeSiteId { get; set; }
+    public string? SpokeSiteName { get; set; }
+    public string? SpokeSiteCheck { get; set; }
 }

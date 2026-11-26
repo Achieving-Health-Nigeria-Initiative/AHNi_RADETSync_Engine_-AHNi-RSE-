@@ -59,6 +59,11 @@ public static class HtsMapper
                 // ── Geolocation ───────────────────────────────────────────────
                 Latitude = Get<decimal?>(row, "latitude"),
                 Longitude = Get<decimal?>(row, "longitude"),
+
+                // ── AHNi spoke sites ──────────────────────────────────────────
+                SpokeSiteId = Get<string>(row, "spokesiteid"),
+                SpokeSiteName = Get<string>(row, "spokesitename"),
+                SpokeSiteCheck = Get<string>(row, "spokesitecheck"),
             });
         }
 
