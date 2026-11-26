@@ -10,7 +10,7 @@ namespace AHNiRSE.Reports;
 /// What a force backfill job of report type "custom" asks for, from the job row the Backfill app wrote.
 /// </summary>
 /// <param name="ScriptName">The script's name in the Backfill app, e.g. vl_eligibility.</param>
-/// <param name="ScriptBlob">custom-script/&lt;name&gt;/&lt;sha256&gt;.sql in the script container (autoreport).</param>
+/// <param name="ScriptBlob">report-script-custom/&lt;name&gt;/&lt;sha256&gt;.sql in the script container (autoreport).</param>
 /// <param name="ScriptSha256">SHA-256 of that blob when the run was requested; a different blob is refused.</param>
 /// <param name="StartDate">:start_date / ?2.</param>
 /// <param name="EndDate">:end_date / ?3 (the quarter ends ?4 and ?5 come from it).</param>
@@ -25,7 +25,7 @@ public sealed record CustomJob(
     IReadOnlyDictionary<string, string> Parameters,
     string RequestId)
 {
-    public const string BlobFolder = "custom-script";
+    public const string BlobFolder = "report-script-custom";
 }
 
 /// <summary>

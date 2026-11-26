@@ -141,12 +141,12 @@ A SQL script saved in the Backfill app (Custom SQL tab) runs at the chosen facil
 is uploaded as one Parquet file (`Reports/CustomQuery.cs`):
 
 ```
-autoreport/custom-script/<name>/<sha256>.sql                       every saved version (written by the Backfill app)
+autoreport/report-script-custom/<name>/<sha256>.sql                every saved version (written by the Backfill app)
 custom-reports/<script>/<request id>/<Facility>_<DATIM>.parquet    each facility's result (CustomScript:Container)
 ```
 
 - The job row carries `ScriptName`, `ScriptBlob`, `ScriptSha256`, `ParamStartDate`, `ParamEndDate` and
-  `Parameters` (JSON of the script's own values). The RSE refuses a blob outside `custom-script/` and a script
+  `Parameters` (JSON of the script's own values). The RSE refuses a blob outside `report-script-custom/` and a script
   whose SHA-256 differs from the job's, so a facility runs exactly the version that was chosen.
 - `Platform/SqlGuard.cs` checks the script: one statement, starting with SELECT or WITH, no INSERT, UPDATE,
   DELETE, MERGE, TRUNCATE, DROP, ALTER, CREATE, GRANT, REVOKE or SELECT INTO, and none of the functions that
