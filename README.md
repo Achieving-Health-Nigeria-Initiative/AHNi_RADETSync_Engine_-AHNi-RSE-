@@ -439,8 +439,8 @@ The same exe serves gen-pop facilities and community centres. One setting in `ap
 | Sheets | all 7 | without `CareExcludedSheets`: RADET, HTS, Index, Prep, AHD (as community-centre uploads have always been) |
 
 The release script builds both packages (`AHNi-RSE-<version>.zip` and `AHNi-RSE-<version>-community-centre.zip`,
-identical except for this setting); `Install.bat` shows which type it is about to install and waits before
-installing. The service logs the type at startup. To change a facility's type, edit the setting and restart
+identical except for this setting); `Install.bat` shows which type it is installing and writes it to
+`install.log`. The service logs the type at startup. To change a facility's type, edit the setting and restart
 the service.
 
 `CareExcludedSheets` takes `Reports:Scripts` names; left-out sheets are not queried at all. `[ "none" ]`
@@ -508,6 +508,12 @@ from the Backfill app - except that, not being the Windows service, it never ins
 ```powershell
 .\Install.bat
 ```
+
+Unattended: it installs straight away and never waits for a key, so a facility's software installer can run it
+from any folder (spaces, brackets and apostrophes in the path are fine). Run it as Administrator or SYSTEM;
+without admin rights it asks Windows for them (UAC prompt) and the elevated copy does the install. Its output also
+goes to `install.log` beside it, and its exit code is the result: `0` installed, anything else failed (see
+`install.log`).
 
 ### Option B: Direct PowerShell deploy script
 

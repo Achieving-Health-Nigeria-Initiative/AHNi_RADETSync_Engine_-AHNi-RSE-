@@ -395,3 +395,5 @@ Write-Host "    Stop-Service  $ServiceName"
 Write-Host "    Start-Service $ServiceName"
 Write-Host ""
 
+# Explicit success code: Install.bat passes this script's exit code on to whatever ran it.
+exit 0
