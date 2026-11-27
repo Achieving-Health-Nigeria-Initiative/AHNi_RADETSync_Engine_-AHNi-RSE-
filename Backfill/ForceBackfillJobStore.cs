@@ -290,6 +290,18 @@ public sealed class ForceBackfillJobStore
         }, ct);
     }
 
+    /// <summary>
+    /// Puts a claimed job back to pending without counting the attempt - for a job stopped by the licence
+    /// check, so it runs once BayCentral accepts this PC. Error says why it is waiting.
+    /// </summary>
+    public Task ReturnToPendingAsync(ForceBackfillJob job, string reason, CancellationToken ct = default)
+        => TryUpdateAsync(job.DatimId, job.RowKey, new()
+        {
+            ["Status"] = "pending",
+            ["Attempts"] = Math.Max(0, job.Attempts - 1),
+            ["Error"] = reason.Length > 1000 ? reason[..1000] : reason,
+        }, ct);
+
     public Task FailAsync(ForceBackfillJob job, string error, CancellationToken ct = default)
         => TryUpdateAsync(job.DatimId, job.RowKey, new()
         {

@@ -296,6 +296,43 @@ Destination pattern:
 
 ## Auth Behavior
 
+**On in the release packages** (`Auth:Enabled = true` in `appsettings.json`), for security: before every report
+cycle and force backfill the RSE asks BayCentral whether this PC - its BIOS serial number - is registered for the
+facility's DATIM ID. A PC that is not registered runs no reports (the heartbeat shows the error) until it is.
+Register PCs in BayCentral under **EMR Version Control admin -> Serial Numbers** (`/module-version-admin`), one row
+per facility (DATIM ID + BIOS serial, from `(Get-CimInstance Win32_BIOS).SerialNumber` on the PC). When a
+facility's PC is replaced, update its serial number there; the new PC is accepted within
+`RetryWhenBlockedMinutes` (below). An authorised result is cached for the UTC day, a refusal for
+`BlockedCacheMinutes` (5); with
+`PermitWhenInconclusive = true` a PC that cannot reach BayCentral keeps reporting. Auto-update never changes
+`appsettings.json`, so `Enabled` stays as installed; set it to `false` in one facility's file to switch the check
+off there only.
+
+**When a PC is refused:**
+- The console (exe run directly) and the log show a `AHNi-RSE IS BLOCKED - THIS PC IS NOT AUTHORISED` banner with
+  the facility, DATIM ID and PC serial to register. Run directly, the exe checks at startup, so the banner shows
+  straight away; the service checks at its first cycle. A blocked cycle logs `Installation auth failed - cycle
+  skipped` with the reason. When the check cannot be done at all - the DATIM ID cannot be read from the EMR
+  database (e.g. PostgreSQL still starting after a reboot), or `Auth:ValidationEndpoint` is empty - the banner says
+  `THE LICENCE CHECK COULD NOT BE DONE` with that reason, nothing is sent to BayCentral, and it is re-checked like
+  any block (not recorded in `RseAuthFailures`, as it is not a registration problem).
+- While blocked, the RSE checks again every `Auth:RetryWhenBlockedMinutes` (5; never less than
+  `BlockedCacheMinutes`) instead of waiting for the next scheduled time, and runs the report as soon as BayCentral
+  accepts the PC (cycle trigger `AuthRestored`), then returns to the normal schedule. Each re-check that still fails
+  logs one `[Auth] Still blocked` line; the banner is shown again only if the reason changes. A block found by
+  something else (e.g. a force backfill) while the schedule is waiting for its next time is noticed within a
+  minute and starts the same re-checks.
+- Force backfills wait: while blocked, pending jobs are left as they are; a job the check stops goes back to
+  `pending` without using an attempt, with `Error` saying it is waiting for the PC to be accepted. Once the PC is
+  accepted the backfill loop checks for jobs at once (not at its next poll) and runs them.
+- The failure is recorded in the Azure table **`RseAuthFailures`** (`Auth:FailureTableName`; empty = off), apart
+  from the heartbeat. One row per PC: PartitionKey = DATIM ID, RowKey = BIOS serial, with `Status` (`failing`, then
+  `resolved` once the PC is accepted again), `Reason` (`refused`, `serial-unavailable`, or `inconclusive` when
+  BayCentral cannot be reached and `PermitWhenInconclusive` is false), `FirstFailedAt`, `LastFailedAt`,
+  `FailureCount` (failed checks, so it rises every 5 minutes while blocked), `ResolvedAt`, `FacilityName`, `State`, `MachineName`, `AppVersion` and `Package` (live / test).
+  Rows with `Status = failing` are the PCs to fix in Serial Numbers. A failed write to the table is only logged; it
+  never affects the check.
+
 Auth service sends:
 
 ```json

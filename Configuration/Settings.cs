@@ -82,6 +82,12 @@ public class AuthSettings
     // so that a Cloudflare or network issue does not stop report cycles.
     // Set this only as a temporary measure while the upstream block is being resolved.
     public bool PermitWhenInconclusive { get; set; } = false;
+    // Azure table where failed checks are recorded (one row per DATIM ID + BIOS serial, see AuthFailureLog).
+    // Empty = not recorded.
+    public string FailureTableName { get; set; } = "RseAuthFailures";
+    // While the PC is refused, check again this often (minutes) and run the report as soon as it is accepted.
+    // Never shorter than BlockedCacheMinutes, which would answer the re-check from the cached refusal.
+    public int RetryWhenBlockedMinutes { get; set; } = 5;
 }
 
 // ── Force backfill ────────────────────────────────────────────────────────────

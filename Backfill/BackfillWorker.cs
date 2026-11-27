@@ -13,10 +13,15 @@ namespace AHNiRSE.Backfill;
 /// Every poll also releases jobs left running by a machine that never came back (see
 /// ForceBackfillJobStore.ReleaseAbandonedAsync), so a job taken by a retired or renamed PC is not
 /// stuck forever.
+///
+/// While this PC is blocked by the licence check (not registered in BayCentral) jobs are left pending, and a job
+/// the check stops goes back to pending without using an attempt. They run as soon as the PC is accepted: the
+/// wait between polls ends early when that happens (ScheduleWorker re-checks every few minutes while blocked).
 /// </summary>
 public sealed class BackfillWorker(
     ReportOrchestrator orchestrator,
     ForceBackfillJobStore jobs,
+    InstallationAuthService auth,
     FacilityRunState state,
     IOptions<ForceBackfillSettings> options,
     IOptions<ReportSettings> reportOptions,
@@ -32,6 +37,12 @@ public sealed class BackfillWorker(
 
     // False until the job table is checked and this machine's interrupted jobs are released.
     private bool _ready;
+
+    // Logged once per blocked spell, not every poll.
+    private bool _toldBlocked;
+
+    private const string WaitingForAuth =
+        "Waiting: this PC is not authorised in BayCentral (Serial Numbers). Runs once it is accepted.";
 
     protected override string Name => "[Backfill]";
 
@@ -51,8 +62,24 @@ public sealed class BackfillWorker(
         while (!ct.IsCancellationRequested)
         {
             await RunPendingJobsAsync(ct);
-            await Task.Delay(interval, ct);
+            await WaitForNextPollAsync(interval, ct);
         }
+    }
+
+    /// <summary>Waits one poll interval, or less if this PC was blocked and is accepted meanwhile.</summary>
+    private async Task WaitForNextPollAsync(TimeSpan interval, CancellationToken ct)
+    {
+        if (!auth.IsBlocked)
+        {
+            await Task.Delay(interval, ct);
+            return;
+        }
+
+        var until = DateTime.UtcNow + interval;
+        while (DateTime.UtcNow < until && auth.IsBlocked)
+            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+        if (!auth.IsBlocked)
+            logger.LogInformation("[Backfill] This PC is now authorised - checking for waiting jobs now.");
     }
 
     private async Task RunPendingJobsAsync(CancellationToken ct)
@@ -74,6 +101,15 @@ public sealed class BackfillWorker(
 
             await jobs.ReleaseAbandonedAsync(datimId, _abandonedAfter, ct);
 
+            if (auth.IsBlocked)
+            {
+                if (!_toldBlocked)
+                    logger.LogWarning("[Backfill] This PC is blocked (not authorised in BayCentral) - pending jobs wait until it is accepted.");
+                _toldBlocked = true;
+                return;
+            }
+            _toldBlocked = false;
+
             while (!ct.IsCancellationRequested && await jobs.TryClaimNextAsync(datimId, ct) is { } job)
             {
                 logger.LogInformation(
@@ -89,6 +125,15 @@ public sealed class BackfillWorker(
                 {
                     // The job stays running; it is released the next time the loop starts.
                     _ready = false;
+                    return;
+                }
+                catch (InstallationNotAuthorisedException)
+                {
+                    logger.LogWarning(
+                        "[Backfill] Job {Job} waits - this PC is not authorised in BayCentral. Back to pending (attempt not counted); it runs once the PC is accepted.",
+                        job.RowKey);
+                    await jobs.ReturnToPendingAsync(job, WaitingForAuth, ct);
+                    _toldBlocked = true;
                     return;
                 }
                 catch (Exception ex)

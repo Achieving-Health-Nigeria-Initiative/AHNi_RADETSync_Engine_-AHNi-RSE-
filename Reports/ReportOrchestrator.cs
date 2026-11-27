@@ -124,7 +124,7 @@ public class ReportOrchestrator(
 
             if (!await auth.ValidateInstallationAsync(cts.Token))
             {
-                logger.LogError("[Orchestrator] {Msg}", AuthFailed);
+                logger.LogError("[Orchestrator] {Msg} - cycle skipped. {Reason}", AuthFailed, auth.LastFailure);
                 heartbeat.SetReportError(AuthFailed);
                 await AuditAsync(authPassed: false, 0, string.Empty, AuthFailed);
                 return (0, string.Empty);
@@ -248,7 +248,7 @@ public class ReportOrchestrator(
             cts.CancelAfter(TimeSpan.FromSeconds(Math.Max(30, _settings.GlobalCycleTimeoutSeconds)));
 
             if (!await auth.ValidateInstallationAsync(cts.Token))
-                throw new InvalidOperationException(AuthFailed);
+                throw new InstallationNotAuthorisedException(AuthFailed);
 
             BackfillResult result;
             if (isCustom)

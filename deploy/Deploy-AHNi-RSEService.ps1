@@ -131,23 +131,17 @@ foreach ($legacyName in $LegacyServiceNames)
     Start-Sleep -Seconds 2
 }
 
-# Migrate appsettings.json from the first legacy install path that has one,
-# but only if the NEW install path doesn't already have an appsettings.json.
-$newSettings = Join-Path $InstallPath 'appsettings.json'
-if (-not (Test-Path $newSettings))
+# The package's appsettings.json is what the service uses (it carries the live settings), so a legacy
+# install's appsettings.json is not copied over it - only pointed out, in case this server used a
+# different database name or password that has to be set again in the new one.
+foreach ($legacyPath in $LegacyInstallPaths)
 {
-    foreach ($legacyPath in $LegacyInstallPaths)
+    $legacySettings = Join-Path $legacyPath 'appsettings.json'
+    if (Test-Path $legacySettings)
     {
-        $legacySettings = Join-Path $legacyPath 'appsettings.json'
-        if (Test-Path $legacySettings)
-        {
-            Write-Host "[MIGRATE] Copying appsettings.json from legacy path: $legacyPath" -ForegroundColor Yellow
-            New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
-            Copy-Item -Path $legacySettings -Destination $newSettings -Force
-            Write-Host "[MIGRATE] appsettings.json preserved at: $newSettings" -ForegroundColor Green
-            Write-Host "[MIGRATE] NOTE: Review the copied appsettings.json — connection strings and keys should remain valid." -ForegroundColor Cyan
-            break
-        }
+        Write-Host "[MIGRATE] Legacy settings left in place (not used): $legacySettings" -ForegroundColor Cyan
+        Write-Host "[MIGRATE]   If this server's database name or password is not the package default, copy it from there" -ForegroundColor Cyan
+        Write-Host "[MIGRATE]   into $(Join-Path $InstallPath 'appsettings.json') and restart the service." -ForegroundColor Cyan
     }
 }
 
@@ -394,7 +388,7 @@ Write-Host "  Recovery     : restart after 60s on ALL failures"
 Write-Host "  Startup      : Automatic (Delayed)"
 Write-Host ""
 Write-Host "  TO CHECK LOGS:" -ForegroundColor Yellow
-Write-Host "    Get-Content '$LogPath\ahni-rse-$(Get-Date -f yyyy-MM-dd).log' -Wait -Tail 50"
+Write-Host "    Get-Content '$LogPath\ahni-rse-$(Get-Date -f yyyyMMdd).log' -Wait -Tail 50"
 Write-Host ""
 Write-Host "  TO MANUALLY STOP/START:" -ForegroundColor Yellow
 Write-Host "    Stop-Service  $ServiceName"

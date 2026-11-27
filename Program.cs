@@ -124,6 +124,7 @@ try
     builder.Services.AddSingleton<DeviceIdentity>();
     builder.Services.AddSingleton<AuthResultCache>();
     builder.Services.AddSingleton<VerifySerialClient>();
+    builder.Services.AddSingleton<AuthFailureLog>();
     builder.Services.AddSingleton<InstallationAuthService>();
     builder.Services.AddSingleton<ReportCycleAudit>();
 
@@ -169,6 +170,23 @@ try
 
     // Community centre or gen-pop, from appsettings.json (Facility:IsCommunityCentre).
     scope.ServiceProvider.GetRequiredService<FacilityProfile>().Log(startupLogger);
+
+    // Exe run directly (not as the service): check the licence now, so whoever runs it sees at once whether this
+    // PC is authorised - a refusal shows the BLOCKED banner with the serial and DATIM ID to register. The service
+    // skips this (Windows expects a service to start within 30 seconds); its first cycle does the same check.
+    if (!isWindowsService)
+    {
+        try
+        {
+            var auth = scope.ServiceProvider.GetRequiredService<InstallationAuthService>();
+            if (await auth.ValidateInstallationAsync())
+                startupLogger.LogInformation("[Startup] Licence check: this PC is authorised (or the check is turned off).");
+        }
+        catch (Exception ex)
+        {
+            startupLogger.LogWarning("[Startup] Licence check could not run: {Message}", ex.Message);
+        }
+    }
 
     startupLogger.LogInformation("[Startup] Starting host...");
     await host.RunAsync();
